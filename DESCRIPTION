@@ -1,0 +1,43 @@
+Package: tidyview
+Title: Codeless Data Workflow GUI with Paste-Ready R Code
+Version: 0.1.0
+Authors@R: 
+    person("Elmer", "Tumlos", role = c("aut", "cre"),
+           email = "e.tumlos@psa.gov.ph")
+Author: Elmer Tumlos [aut, cre]
+Maintainer: Elmer Tumlos <e.tumlos@psa.gov.ph>
+Description: A Material Design 3 graphical user interface for codeless data
+    workflows with a tidyverse-style interface and a data.table execution
+    engine. Provides a browser-based GUI launched via tidygui() that lets
+    users inspect, audit, validate, filter, select, mutate, summarise,
+    join, reshape, tabulate, compare, and export data frames using
+    point-and-click interactions. Every GUI action generates and executes
+    equivalent paste-ready R code, displayed live in a code pane. Supports
+    loading data from the R environment, CSV, TSV, Excel, RDS, RCDF, and
+    other R-compatible formats.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Depends:
+    R (>= 4.1.0)
+Imports:
+    data.table (>= 1.14.0),
+    httpuv (>= 1.6.0),
+    jsonlite (>= 1.8.0)
+Suggests:
+    collapse,
+    stringi,
+    anytime,
+    readxl,
+    haven,
+    rcdf,
+    tsg,
+    phscs,
+    writexl,
+    tinytest,
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
+URL: https://github.com/elmertumlos/tidyview
+BugReports: https://github.com/elmertumlos/tidyview/issues

@@ -1,0 +1,551 @@
+#' Launch the tidyview GUI
+#'
+#' Opens a Material Design 3 browser-based GUI for codeless data tabulation.
+#' Every interaction generates valid data.table R code shown live in the
+#' code pane. Supports loading data from the R environment or from files,
+#' including RCDF datasets when the optional `rcdf` package is installed.
+#'
+#' @param data Optional. A data frame or data.table to open immediately.
+#'   If NULL, the import dialog is shown first.
+#' @param name Character. The variable name to use in generated R code.
+#'   Defaults to "DT".
+#' @param theme A theme object from [m3_theme()]. Defaults to the tidyview
+#'   purple seed theme.
+#' @param port Integer. Local port for the GUI server. Default 7474.
+#' @param launch.browser Logical. Open the browser automatically. Default TRUE.
+#' @param quiet Logical. Suppress startup messages. Default FALSE.
+#'
+#' @return Invisibly returns the httpuv server handle. Call
+#'   [stop_tidygui()] to shut it down programmatically.
+#'
+#' @examples
+#' \dontrun{
+#' tidygui()
+#' tidygui(mtcars, name = "cars")
+#' tidygui(data.table::fread("sales.csv"), theme = m3_theme("#1D9E75"))
+#' }
+#'
+#' @export
+tidygui <- function(data     = NULL,
+                    name     = "DT",
+                    theme    = m3_theme(),
+                    port     = 7474L,
+                    launch.browser = TRUE,
+                    quiet    = FALSE) {
+
+  if (!is.null(data)) {
+    if (!data.table::is.data.table(data)) {
+      data <- data.table::as.data.table(data)
+    }
+    session_data <- list(name = name, dt = data)
+  } else {
+    session_data <- list(name = NULL, dt = NULL)
+  }
+
+  env_objects <- .scan_r_env()
+  app_dir     <- system.file("www", package = "tidyview")
+  tmpl_dir    <- system.file("templates", package = "tidyview")
+  startup_notice <- .startup_notice_message()
+
+  state <- new.env(parent = emptyenv())
+  state$dt         <- session_data$dt
+  state$name       <- session_data$name
+  state$history    <- character(0)
+  state$undo_stack <- list()
+  state$env_objs   <- env_objects
+  state$theme      <- theme
+  state$code_style <- "native"
+  state$per_page   <- 50L
+  state$startup_notice <- startup_notice
+  # multi-session: list of {dt, name, history, undo_stack}; active_idx = which is current
+  state$sessions   <- if (!is.null(session_data$dt)) {
+    list(list(dt = session_data$dt, name = session_data$name,
+              history = character(0), undo_stack = list()))
+  } else list()
+  state$active_idx <- if (!is.null(session_data$dt)) 1L else 0L
+
+  existing <- getOption("tidyview.server")
+  if (!is.null(existing)) {
+    tryCatch(httpuv::stopServer(existing), error = function(e) NULL)
+    options(tidyview.server = NULL)
+  }
+
+  app <- .build_app(state, app_dir, tmpl_dir)
+
+  srv <- tryCatch(
+    httpuv::startServer("127.0.0.1", port, app),
+    error = function(e) {
+      stop("Could not start tidyview on port ", port,
+           ". A previous server may still be running. ",
+           "Restart your R session to free the port.", call. = FALSE)
+    }
+  )
+
+  url <- paste0("http://127.0.0.1:", port)
+  if (!quiet) {
+    message("tidyview running at ", url)
+    message("Stop with stop_tidygui() or close the browser tab.")
+    if (!is.null(startup_notice)) message(startup_notice)
+  }
+  if (launch.browser) utils::browseURL(url)
+
+  options(tidyview.server = srv)
+  invisible(srv)
+}
+
+
+#' Stop a running tidyview GUI server
+#'
+#' @export
+stop_tidygui <- function() {
+  srv <- getOption("tidyview.server")
+  if (!is.null(srv)) {
+    tryCatch(httpuv::stopServer(srv), error = function(e) NULL)
+    options(tidyview.server = NULL)
+    message("tidyview stopped.")
+  } else {
+    message("No tidyview server is running.")
+  }
+  invisible(NULL)
+}
+
+
+
+.build_app <- function(state, app_dir, tmpl_dir) {
+  list(
+    call = function(req) {
+      path <- req$PATH_INFO
+
+      if (path == "/" || path == "/index.html") {
+        return(.serve_index(state, tmpl_dir))
+      }
+
+      if (grepl("^/api/", path)) {
+        return(.handle_api(req, path, state))
+      }
+
+      .serve_static(path, app_dir)
+    }
+  )
+}
+
+
+.serve_index <- function(state, tmpl_dir) {
+  theme_css <- .theme_to_css(state$theme)
+
+  init_data <- if (!is.null(state$dt)) {
+    jsonlite::toJSON(list(
+      name    = state$name,
+      columns = .safe_dt_column_meta(state$dt),
+      preview = .safe_dt_preview(state$dt, n = 5),
+      nrow    = nrow(state$dt),
+      ncol    = ncol(state$dt)
+    ), auto_unbox = TRUE)
+  } else {
+    "null"
+  }
+
+  env_json <- jsonlite::toJSON(state$env_objs, auto_unbox = TRUE)
+  startup_notice <- jsonlite::toJSON(state$startup_notice, auto_unbox = TRUE, null = "null")
+
+  tmpl <- readLines(file.path(tmpl_dir, "index.html"), warn = FALSE)
+  html <- paste(tmpl, collapse = "\n")
+  html <- gsub("__THEME_CSS__",  theme_css,  html, fixed = TRUE)
+  html <- gsub("__INIT_DATA__",  init_data,  html, fixed = TRUE)
+  html <- gsub("__ENV_OBJECTS__", env_json,  html, fixed = TRUE)
+  html <- gsub("__STARTUP_NOTICE__", startup_notice, html, fixed = TRUE)
+  html <- gsub("__VERSION__", utils::packageVersion("tidyview"), html, fixed = TRUE)
+
+  list(
+    status  = 200L,
+    headers = list("Content-Type" = "text/html; charset=utf-8"),
+    body    = html
+  )
+}
+
+
+.startup_notice_message <- function() {
+  feature_map <- c(
+    readxl = "Excel import",
+    haven = "SPSS/Stata import and export",
+    rcdf = "RCDF import",
+    tsg = "TSG tabulate and crosstab",
+    phscs = "area names / PSGC joins",
+    writexl = "Excel export"
+  )
+  missing <- names(feature_map)[!vapply(names(feature_map), requireNamespace, quietly = TRUE, FUN.VALUE = logical(1))]
+  if (!length(missing)) return(NULL)
+
+  missing_lines <- paste(
+    sprintf("%s = %s", missing, unname(feature_map[missing])),
+    collapse = "; "
+  )
+  pkg_list <- paste(sprintf("'%s'", missing), collapse = ", ")
+  paste0(
+    "Tiny note: some optional tidyview features need extra packages. Missing: ",
+    missing_lines,
+    ". In R, run install.packages(c(", pkg_list, ")), then restart tidyview."
+  )
+}
+
+
+.handle_api <- function(req, path, state) {
+  body_raw  <- req$rook.input$read_lines()
+  body_json <- if (length(body_raw) && nchar(body_raw[1])) {
+    tryCatch(jsonlite::fromJSON(paste(body_raw, collapse = "\n"),
+                                simplifyVector = FALSE),
+             error = function(e) list())
+  } else list()
+
+  result <- tryCatch({
+    switch(path,
+      "/api/load_env"     = .api_load_env(body_json, state),
+      "/api/load_file"    = .api_load_file(body_json, state),
+      "/api/inspect_rcdf" = .api_inspect_rcdf(body_json, state),
+      "/api/load_rcdf_tables" = .api_load_rcdf_tables(body_json, state),
+      "/api/op_select"    = .api_op_select(body_json, state),
+      "/api/op_filter"    = .api_op_filter(body_json, state),
+      "/api/op_mutate"    = .api_op_mutate(body_json, state),
+      "/api/op_summarise" = .api_op_summarise(body_json, state),
+      "/api/op_arrange"   = .api_op_arrange(body_json, state),
+      "/api/op_join"      = .api_op_join(body_json, state),
+      "/api/op_combine"   = .api_op_combine(body_json, state),
+      "/api/op_relocate"  = .api_op_relocate(body_json, state),
+      "/api/op_reshape"   = .api_op_reshape(body_json, state),
+      "/api/op_rename"    = .api_op_rename(body_json, state),
+      "/api/op_dedupe"    = .api_op_dedupe(body_json, state),
+      "/api/op_drop_na"   = .api_op_drop_na(body_json, state),
+      "/api/op_slice"     = .api_op_slice(body_json, state),
+      "/api/op_count"     = .api_op_count(body_json, state),
+      "/api/op_fill_na"   = .api_op_fill_na(body_json, state),
+      "/api/op_separate"  = .api_op_separate(body_json, state),
+      "/api/op_unite"     = .api_op_unite(body_json, state),
+      "/api/op_tabulate"  = .api_op_tabulate(body_json, state),
+      "/api/op_crosstab"  = .api_op_crosstab(body_json, state),
+      "/api/op_join_psgc" = .api_op_join_psgc(body_json, state),
+      "/api/op_recode"         = .api_op_recode(body_json, state),
+      "/api/op_factor"         = .api_op_factor(body_json, state),
+      "/api/preview_op"        = .api_preview_op(body_json, state),
+      "/api/col_values"        = .api_col_values(body_json, state),
+      "/api/get_data"          = .api_get_data(body_json, state),
+      "/api/scan_env"          = .api_scan_env(),
+      "/api/get_history"       = .api_get_history(state),
+      "/api/undo"              = .api_undo(state),
+      "/api/export"            = .api_export(body_json, state),
+      "/api/save_to_env"       = .api_save_to_env(body_json, state),
+      "/api/set_theme"         = .api_set_theme(body_json, state),
+      "/api/get_settings"      = .api_get_settings(state),
+      "/api/list_sessions"     = .api_list_sessions(state),
+      "/api/switch_session"    = .api_switch_session(body_json, state),
+      "/api/remove_session"    = .api_remove_session(body_json, state),
+      "/api/audit_summary"     = .api_audit_summary(body_json, state),
+      "/api/missing_summary"   = .api_missing_summary(body_json, state),
+      "/api/validate_summary"  = .api_validate_summary(body_json, state),
+      "/api/compare_summary"   = .api_compare_summary(body_json, state),
+      list(error = paste("Unknown endpoint:", path))
+    )
+  }, error = function(e) {
+    list(error = .human_error_message(conditionMessage(e)))
+  })
+
+  list(
+    status  = 200L,
+    headers = list("Content-Type" = "application/json"),
+    body    = jsonlite::toJSON(result, auto_unbox = TRUE, na = "null")
+  )
+}
+
+
+.human_error_message <- function(message) {
+  if (is.null(message) || !length(message)) message <- "Something went wrong."
+  msg <- trimws(as.character(message))
+  low <- tolower(msg)
+
+  if (grepl("openssl error", low, fixed = TRUE) && grepl("empty password", low, fixed = TRUE)) {
+    return("The selected PEM key is password-protected. Enter the key password, then try again.")
+  }
+  if (grepl("openssl error", low, fixed = TRUE) &&
+      grepl("bad decrypt|cipherfinal error|mac verify failure|wrong password|invalid password", low)) {
+    return("The PEM key password looks incorrect. Check the password and try again.")
+  }
+  if (grepl("openssl error", low, fixed = TRUE)) {
+    return("The selected key file could not be opened. Check that you chose the correct PEM key and password, then try again.")
+  }
+  if (grepl("unknown endpoint", low, fixed = TRUE)) {
+    return("This action needs a tidyview restart. Run stop_tidygui(); tidygui(), then try again.")
+  }
+  if (grepl("^idx required$", low) || grepl("invalid session index", low, fixed = TRUE)) {
+    return("That data tab is no longer available. Reload the app and try again.")
+  }
+  if (grepl("path or file_name required", low, fixed = TRUE) ||
+      grepl("no readable file contents were provided", low, fixed = TRUE)) {
+    return("Choose a file first, then try again.")
+  }
+  if (grepl("^file_path required$", low) || grepl("^key_path required$", low)) {
+    return("The RCDF import details are incomplete. Choose the key and file again, then retry.")
+  }
+  if (grepl("^column required$", low)) return("Choose a column first.")
+  if (grepl("^row_var required$", low)) return("Choose a row variable first.")
+  if (grepl("^col_var required$", low)) return("Choose a column variable first.")
+  if (grepl("^col required$", low)) return("Choose a column first.")
+  if (grepl("^mapping required$", low)) return("Add at least one recode mapping, then try again.")
+  if (grepl("^name required$", low)) return("Enter an object name first.")
+
+  msg
+}
+
+
+.serve_static <- function(path, app_dir) {
+  clean <- sub("^/", "", path)
+  clean <- gsub("\\.\\.", "", clean)
+  full  <- file.path(app_dir, clean)
+
+  if (!file.exists(full)) {
+    return(list(status = 404L, headers = list("Content-Type" = "text/plain"),
+                body = "Not found"))
+  }
+
+  mime <- .mime_type(full)
+  list(
+    status  = 200L,
+    headers = list("Content-Type" = mime),
+    body    = readBin(full, "raw", file.info(full)$size)
+  )
+}
+
+
+.mime_type <- function(path) {
+  ext <- tolower(tools::file_ext(path))
+  switch(ext,
+    css  = "text/css",
+    js   = "application/javascript",
+    html = "text/html",
+    json = "application/json",
+    png  = "image/png",
+    svg  = "image/svg+xml",
+    woff2 = "font/woff2",
+    "application/octet-stream"
+  )
+}
+
+
+.scan_r_env <- function() {
+  objs   <- ls(envir = .GlobalEnv)
+  result <- lapply(objs, function(nm) {
+    obj <- tryCatch(get(nm, envir = .GlobalEnv), error = function(e) NULL)
+    if (is.null(obj)) return(NULL)
+    if (is.data.frame(obj) || is.matrix(obj)) {
+      return(list(type = "table", name = nm, class = class(obj)[1],
+                  nrow = nrow(obj), ncol = ncol(obj)))
+    }
+    if (is.list(obj)) {
+      children <- unname(Filter(Negate(is.null), lapply(seq_along(obj), function(i) {
+        child <- obj[[i]]
+        if (!is.data.frame(child) && !is.matrix(child)) return(NULL)
+        child_nm <- if (!is.null(names(obj)) && nzchar(names(obj)[i])) names(obj)[i]
+                    else paste0("[[", i, "]]")
+        list(name = child_nm, class = class(child)[1],
+             nrow = nrow(child), ncol = ncol(child))
+      })))
+      if (!length(children)) return(NULL)
+      return(list(type = "list", name = nm, class = "list",
+                  n_tables = length(children), children = children))
+    }
+    NULL
+  })
+  unname(Filter(Negate(is.null), result))
+}
+
+
+.dt_column_meta <- function(dt) {
+  if (!data.table::is.data.table(dt)) {
+    dt <- data.table::as.data.table(.strip_labelled(dt))
+  }
+  lapply(seq_along(dt), function(i) {
+    col  <- dt[[i]]
+    nm   <- names(dt)[i]
+    type <- .r_type_label(col)
+    lbl  <- attr(col, "label", exact = TRUE)
+    list(
+      name    = nm,
+      label   = if (!is.null(lbl)) as.character(lbl) else NULL,
+      type    = type,
+      n_unique = data.table::uniqueN(col),
+      n_na    = sum(is.na(col)),
+      sample  = as.list(.col_sample(col))  # always JSON array, never auto-unboxed scalar
+    )
+  })
+}
+
+
+.safe_dt_column_meta <- function(dt) {
+  tryCatch(.dt_column_meta(dt), error = function(e) list())
+}
+
+
+.dt_column_schema <- function(dt) {
+  if (!data.table::is.data.table(dt)) {
+    dt <- data.table::as.data.table(.strip_labelled(dt))
+  }
+  lapply(seq_along(dt), function(i) {
+    col  <- dt[[i]]
+    lbl  <- attr(col, "label", exact = TRUE)
+    list(
+      name  = names(dt)[i],
+      label = if (!is.null(lbl)) as.character(lbl) else NULL,
+      type  = .r_type_label(col)
+    )
+  })
+}
+
+
+.safe_dt_column_schema <- function(dt) {
+  tryCatch(.dt_column_schema(dt), error = function(e) list())
+}
+
+
+.r_type_label <- function(x) {
+  if (inherits(x, "IDate"))     return("IDate")
+  if (inherits(x, "ITime"))     return("ITime")
+  if (inherits(x, "POSIXct"))   return("POSIXct")
+  if (inherits(x, "Date"))      return("Date")
+  if (inherits(x, "factor"))    return("factor")
+  switch(typeof(x),
+    integer   = "int",
+    double    = "dbl",
+    character = "chr",
+    logical   = "lgl",
+    complex   = "cplx",
+    "unknown"
+  )
+}
+
+
+.strip_labelled <- function(df) {
+  if (!is.data.frame(df) && !data.table::is.data.table(df)) return(df)
+  for (nm in names(df)) {
+    col <- df[[nm]]
+    lbl <- attr(col, "label", exact = TRUE)
+    vals <- attr(col, "labels", exact = TRUE)
+    if (!is.null(lbl)) attr(col, "label") <- as.character(lbl)
+    if (!is.null(vals)) attr(col, "labels") <- vals
+    df[[nm]] <- col
+  }
+  df
+}
+
+
+.plain_vector <- function(x) {
+  if (inherits(x, "factor")) return(as.character(x))
+  if (inherits(x, "haven_labelled") || inherits(x, "labelled") || inherits(x, "labelled_spss")) {
+    x <- unclass(x)
+    attributes(x) <- NULL
+    return(x)
+  }
+  if (inherits(x, "POSIXct")) {
+    tz <- attr(x, "tzone", exact = TRUE)
+    if (is.null(tz) || !length(tz) || !nzchar(tz[[1]])) tz <- "UTC"
+    return(as.POSIXct(x, tz = tz[[1]]))
+  }
+  if (inherits(x, "Date") || inherits(x, "IDate") || inherits(x, "ITime")) return(x)
+  if (is.atomic(x)) return(unname(x))
+  as.vector(x)
+}
+
+
+.scalar_display <- function(x) {
+  if (length(x) == 0L || is.null(x) || (length(x) == 1L && is.na(x))) return(NA_character_)
+  if (inherits(x, "factor")) return(as.character(x))
+  if (inherits(x, "haven_labelled") || inherits(x, "labelled") || inherits(x, "labelled_spss")) {
+    return(.scalar_display(unclass(x)))
+  }
+  if (inherits(x, "POSIXct")) {
+    tz <- attr(x, "tzone", exact = TRUE)
+    if (is.null(tz) || !length(tz) || !nzchar(tz[[1]])) tz <- "UTC"
+    return(format(x, tz = tz[[1]], usetz = TRUE))
+  }
+  if (inherits(x, "Date") || inherits(x, "IDate") || inherits(x, "ITime")) return(as.character(x))
+  as.character(x)
+}
+
+
+.col_sample <- function(x, n = 3) {
+  plain <- .plain_vector(x)
+  vals <- unique(plain[!is.na(plain)])
+  vals <- head(vals, n)
+  vapply(vals, .scalar_display, character(1))
+}
+
+
+.dt_preview <- function(dt, n = 5) {
+  if (!data.table::is.data.table(dt)) {
+    dt <- data.table::as.data.table(.strip_labelled(dt))
+  }
+  rows <- min(n, nrow(dt))
+  if (rows < 1L) return(list())
+  lapply(seq_len(rows), function(i) {
+    row <- lapply(dt, function(col) {
+      if (length(col) < i) return(NA)
+      col[[i]]
+    })
+    names(row) <- names(dt)
+    .safe_row_json(row)
+  })
+}
+
+
+.safe_dt_preview <- function(dt, n = 5) {
+  tryCatch(.dt_preview(dt, n = n), error = function(e) list())
+}
+
+
+.safe_row <- function(row1) {
+  # Convert a 1-row data.table to a plain list with only JSON-safe scalars.
+  # Strips S3 classes like haven_labelled that jsonlite would serialize as objects.
+  lapply(as.list(row1), function(v) {
+    if (is.null(v) || length(v) == 0L || (length(v) == 1L && is.na(v))) return(NA)
+    if (is.list(v)) v <- v[[1L]]           # list-column cell → first element
+    if (length(v) != 1L) v <- v[[1L]]
+    if (inherits(v, "factor")) return(as.character(v))
+    if (inherits(v, "haven_labelled") || inherits(v, "labelled") || inherits(v, "labelled_spss")) {
+      v <- unclass(v)
+      attributes(v) <- NULL
+      return(v)
+    }
+    if (inherits(v, "POSIXct")) {
+      tz <- attr(v, "tzone", exact = TRUE)
+      if (is.null(tz) || !length(tz) || !nzchar(tz[[1]])) tz <- "UTC"
+      return(format(v, tz = tz[[1]], usetz = TRUE))
+    }
+    if (inherits(v, "Date") || inherits(v, "IDate") || inherits(v, "ITime")) return(as.character(v))
+    if (!is.atomic(v)) v <- as.vector(v)
+    v
+  })
+}
+
+
+.safe_row_json <- function(row1) {
+  lapply(as.list(row1), function(v) {
+    if (is.null(v) || length(v) == 0L || (length(v) == 1L && is.na(v))) return(NA)
+    if (is.list(v)) {
+      if (!length(v)) return(NA)
+      v <- v[[1L]]
+    }
+    if (is.null(v) || length(v) == 0L || (length(v) == 1L && is.na(v))) return(NA)
+    if (inherits(v, "factor")) return(as.character(v))
+    if (inherits(v, "haven_labelled") || inherits(v, "labelled") || inherits(v, "labelled_spss")) {
+      v <- unclass(v)
+      attributes(v) <- NULL
+    }
+    if (inherits(v, "POSIXct")) {
+      tz <- attr(v, "tzone", exact = TRUE)
+      if (is.null(tz) || !length(tz) || !nzchar(tz[[1]])) tz <- "UTC"
+      return(format(v, tz = tz[[1]], usetz = TRUE))
+    }
+    if (inherits(v, "Date") || inherits(v, "IDate") || inherits(v, "ITime")) return(as.character(v))
+    if (!is.atomic(v)) v <- as.vector(v)
+    if (length(v) == 0L || all(is.na(v))) return(NA)
+    if (length(v) > 1L) return(paste(vapply(v, .scalar_display, character(1)), collapse = ", "))
+    .scalar_display(v)
+  })
+}

@@ -1,0 +1,126 @@
+---
+title: "Getting started with tidyview"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started with tidyview}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(eval = FALSE)
+```
+
+## What is tidyview?
+
+`tidyview` is a codeless data workflow GUI with a tidyverse-style interface
+and a `data.table` backend. It opens a Material Design 3 browser interface
+that lets anyone with a logical mind inspect, clean, validate, compare,
+tabulate, and export data without writing each step by hand.
+
+Every click generates a valid `data.table` expression shown live in the **code
+pane**. The more you use it, the more R you learn by watching.
+
+## Installation
+
+```r
+# from GitHub
+remotes::install_github("elmertumlos/tidyview")
+
+# core packages
+install.packages(c("data.table", "httpuv", "jsonlite", "htmltools"))
+
+# optional file-format support
+install.packages(c("readxl", "haven", "writexl"))
+```
+
+## Quick start
+
+```r
+library(tidyview)
+
+# open with data from your environment
+tidygui(mtcars)
+
+# open with a CSV file
+tidygui(data.table::fread("sales.csv"), name = "sales")
+
+# open the import dialog (choose data interactively)
+tidygui()
+```
+
+## The GUI at a glance
+
+- top app bar with session tabs, help, undo, and settings
+- left navigation rail grouped by workflow
+- center data grid with paging, search, and previews
+- right-side operation panels that open when you choose a verb
+- bottom script pane that shows the generated paste-ready R code
+
+## Operations
+
+### Filter rows - `DT[i]`
+
+Click **filter** in the nav rail. Build one or more conditions:
+
+- column -> operator -> value
+- combine with AND / OR
+- supports standard comparisons, `%in%`, text matching, regex, and missing checks
+
+### Select columns - `DT[, .(cols)]`
+
+Use **select** to keep a subset of columns and preserve the result as a
+paste-ready `data.table` expression.
+
+### Mutate columns - `DT[, new := expr]`
+
+Use **mutate** to create derived columns with typed expressions and helper
+builders for common string, date, and conditional operations.
+
+### RegEx workflows
+
+`tidyview` supports regex across several panels:
+
+- **filter** for `matches regex` and `does not match regex`
+- **mutate** for extract, replace, and remove patterns
+- **validate** for regex-based quality checks
+- **rename** for regex find/replace on column names
+
+Typical generated code looks like:
+
+```r
+DT <- DT[grepl("^[A-Za-z]{3}$", as.character(last_name), perl = TRUE)]
+DT[, code_only := sub("^.*-([0-9]+)$", "\\1", as.character(record_id), perl = TRUE)]
+```
+
+### Summarise and tabulate
+
+Use **summarise**, **count**, **tabulate**, and **crosstab** to build grouped
+summaries and frequency tables.
+
+### Audit, missing, validate, and compare
+
+Use the **audit**, **missing**, **validate**, and **compare** panels to review
+quality issues before export:
+
+- audit missingness, duplicates, and column summaries
+- inspect grouped missing-data patterns
+- define validation rules
+- compare one dataset against another
+
+## Programmatic helpers
+
+The same operations are also available as helper functions:
+
+```r
+sales <- tv_fread("sales.csv")
+sales <- tv_filter(sales, list(list(col = "region", op = "==", val = "North")))
+sales <- tv_mutate(sales, "tax", "amount * 0.12")
+audit_report <- tv_audit(sales, top_n = 5L)
+missing_report <- tv_missing_summary(sales, group_by = "region")
+validate_report <- tv_validate(sales, rules = list(
+  list(type = "not_missing", col = "record_id")
+))
+```
+
+Each helper stores the generated code in `attr(x, "tv_code")`.

@@ -1,0 +1,13 @@
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+.claude/
+.tidyview-cache/
+*.Rcheck/
+*.tar.gz
+.tmp*
+.codex-*
+node_modules/
+.DS_Store
+Thumbs.db
