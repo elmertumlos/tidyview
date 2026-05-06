@@ -7,11 +7,20 @@
 #' @param path Path to a CSV, TSV, Excel, RDS, RData, SAV, DTA, or RCDF file.
 #' @param as   Name to assign in the generated code. Default `"DT"`.
 #' @param table Optional table name to extract from an RCDF file.
-#' @param decryption_key Optional private-key path for RCDF files.
-#' @param password Optional private-key password for RCDF files.
+#' @param decryption_key Optional decryption-key path for RCDF files. In the
+#'   current tidyview workflow, this is typically the path to a PEM private-key
+#'   file.
+#' @param password Optional password for the RCDF private-key file.
+#' @param return_meta If `TRUE`, include RCDF metadata in the returned object.
 #' @param ...  Additional arguments forwarded to the underlying reader.
 #' @export
-tv_fread <- function(path, as = "DT", table = NULL, decryption_key = NULL, password = NULL, ...) {
+tv_fread <- function(path,
+                     as = "DT",
+                     table = NULL,
+                     decryption_key = NULL,
+                     password = NULL,
+                     return_meta = FALSE,
+                     ...) {
   ext <- tolower(tools::file_ext(path))
   code_path <- normalizePath(path, winslash = "/", mustWork = TRUE)
   result <- switch(ext,
@@ -70,7 +79,8 @@ tv_fread <- function(path, as = "DT", table = NULL, decryption_key = NULL, passw
       obj <- rcdf::read_rcdf(
         path = path,
         decryption_key = decryption_key,
-        password = password
+        password = password,
+        return_meta = return_meta
       )
       if (is.null(table)) {
         tables <- names(obj)[vapply(obj, function(x) is.data.frame(x) || data.table::is.data.table(x), logical(1))]
@@ -81,9 +91,16 @@ tv_fread <- function(path, as = "DT", table = NULL, decryption_key = NULL, passw
         table <- tables[[1]]
       }
       dt <- data.table::as.data.table(.strip_labelled(obj[[table]]))
+      dt <- .tv_attach_rcdf_metadata(dt, obj, return_meta = return_meta)
       object_name <- paste0(as, "_rcdf")
       code <- paste(
-        .tv_rcdf_code(path, decryption_key, password = password, object_name = object_name),
+        .tv_rcdf_code(
+          path,
+          decryption_key,
+          password = password,
+          object_name = object_name,
+          return_meta = return_meta
+        ),
         sprintf('%s <- data.table::as.data.table(%s[[%s]])',
                 .code_name(as), .code_name(object_name), .str_lit(table)),
         sep = "\n"

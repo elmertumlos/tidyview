@@ -1,20 +1,22 @@
 Package: tidyview
-Title: Codeless Data Workflow GUI with Paste-Ready R Code
-Version: 0.1.0
+Title: Guided Data Workflow GUI with Paste-Ready R Code
+Version: 0.2.0
 Authors@R: 
     person("Elmer", "Tumlos", role = c("aut", "cre"),
            email = "e.tumlos@psa.gov.ph")
 Author: Elmer Tumlos [aut, cre]
 Maintainer: Elmer Tumlos <e.tumlos@psa.gov.ph>
-Description: A Material Design 3 graphical user interface for codeless data
+Description: A Material Design 3 graphical user interface for guided data
     workflows with a tidyverse-style interface and a data.table execution
     engine. Provides a browser-based GUI launched via tidygui() that lets
     users inspect, audit, validate, filter, select, mutate, summarise,
     join, reshape, tabulate, compare, and export data frames using
-    point-and-click interactions. Every GUI action generates and executes
-    equivalent paste-ready R code, displayed live in a code pane. Supports
-    loading data from the R environment, CSV, TSV, Excel, RDS, RCDF, and
-    other R-compatible formats.
+    point-and-click interactions. The interface is designed to be teachable
+    and non-technical-user friendly, with plain-language labels, safer
+    previews before destructive actions, and generated paste-ready R code
+    displayed live in a code pane. Supports loading data from the R
+    environment, CSV, TSV, Excel, RDS, RCDF, and other R-compatible
+    formats, including list-column datasets such as dplyr::starwars.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

@@ -66,6 +66,7 @@ const TV = (() => {
     renderHistory();
     bindNav();
     bindTableBar();
+    bindSessionTabBar();
     bindKeyboardShortcuts();
   }
 
@@ -303,6 +304,14 @@ const TV = (() => {
     return state.ncol > 0 && (!!state.name || (Array.isArray(cols) && cols.length > 0));
   }
 
+  function isRightAlignedType(type) {
+    return type === 'dbl' || type === 'int';
+  }
+
+  function columnAlignClass(type) {
+    return isRightAlignedType(type) ? 'tv-align-right' : 'tv-align-left';
+  }
+
   /* ── table rendering ── */
   async function renderTable() {
     const renderSeq = ++state.renderSeq;
@@ -337,7 +346,7 @@ const TV = (() => {
     if (!cols.length || state.ncol <= 0) return showEmpty();
 
     const typeRow = cols.map(c =>
-      `<th><span class="tv-type tv-type-${c.type}">${c.type}</span></th>`
+      `<th class="${columnAlignClass(c.type)}"><span class="tv-type tv-type-${c.type}">${c.type}</span></th>`
     ).join('');
 
     const headRow = cols.map(c => {
@@ -347,17 +356,17 @@ const TV = (() => {
       const copyIco = `<button title="copy column name" onclick='event.stopPropagation();TV.copyToClipboard(${JSON.stringify(c.name)}, ${JSON.stringify(c.name)})'
         style="display:inline-flex;align-items:center;justify-content:center;margin-left:3px;padding:1px 3px;border:none;background:transparent;cursor:pointer;color:inherit;opacity:.3;font-size:9px;border-radius:3px;vertical-align:middle;line-height:1"
         onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='.3'">⎘</button>`;
-      return `<th class="${sorted ? 'sorted' : ''}"
+      return `<th class="${sorted ? 'sorted' : ''} ${columnAlignClass(c.type)}"
         onclick='TV.sortBy(${JSON.stringify(c.name)})'
-        style="${c.type==='dbl'||c.type==='int' ? 'text-align:right' : ''}"
         >${escapeHtml(c.name)}${copyIco}<span style="font-size:9px;opacity:.6">${ind}</span>${lbl}</th>`;
     }).join('');
 
     const bodyRows = (Array.isArray(data.rows) ? data.rows : []).map(row => {
       const cells = cols.map(c => {
         const raw = row && typeof row === 'object' ? row[c.name] : null;
+        const alignClass = columnAlignClass(c.type);
         if (raw === null || raw === undefined) {
-          return `<td class="tv-cell-value" title="Click to view full value" onclick='TV.openCellValue(${JSON.stringify(c.name)}, "NA")' style="color:var(--md-on-surface-variant);font-style:italic">NA</td>`;
+          return `<td class="tv-cell-value tv-missing ${alignClass}" title="Click to view full value" onclick='TV.openCellValue(${JSON.stringify(c.name)}, "NA")'>NA</td>`;
         }
         /* flatten any complex objects (e.g. haven_labelled not fully stripped) */
         const v = (raw !== null && typeof raw === 'object')
@@ -366,9 +375,9 @@ const TV = (() => {
         const rawText = String(v);
         const safeText = escapeHtml(rawText);
         const clickAttr = ` title="Click to view full value" onclick='TV.openCellValue(${JSON.stringify(c.name)}, ${JSON.stringify(rawText)})'`;
-        if (c.type === 'dbl')   return `<td class="tv-num tv-cell-value"${clickAttr}>${Number(v).toLocaleString(undefined,{maximumFractionDigits:4})}</td>`;
-        if (c.type === 'int')   return `<td class="tv-int tv-cell-value"${clickAttr}>${safeText}</td>`;
-        return `<td class="tv-cell-value"${clickAttr}>${safeText}</td>`;
+        if (c.type === 'dbl')   return `<td class="tv-num tv-cell-value ${alignClass}"${clickAttr}>${Number(v).toLocaleString(undefined,{maximumFractionDigits:4})}</td>`;
+        if (c.type === 'int')   return `<td class="tv-int tv-cell-value ${alignClass}"${clickAttr}>${safeText}</td>`;
+        return `<td class="tv-cell-value ${alignClass}"${clickAttr}>${safeText}</td>`;
       }).join('');
       return `<tr>${cells}</tr>`;
     }).join('');
@@ -455,6 +464,12 @@ const TV = (() => {
 
     html += `<button class="tv-session-add" onclick="TV.openPanel('load')" title="add dataset">＋</button>`;
     bar.innerHTML = html;
+    const activeTab = bar.querySelector('.tv-session-tab.active');
+    if (activeTab) {
+      requestAnimationFrame(() => {
+        activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+      });
+    }
     if (state.panel === 'compare' && globalThis.TVCOMPARE && typeof globalThis.TVCOMPARE.refreshSources === 'function') {
       globalThis.TVCOMPARE.refreshSources();
     }
@@ -620,6 +635,18 @@ const TV = (() => {
         renderTable();
       });
     }
+  }
+
+  function bindSessionTabBar() {
+    const bar = $('session-tab-bar');
+    if (!bar || bar.dataset.bound === 'true') return;
+    bar.dataset.bound = 'true';
+    bar.addEventListener('wheel', event => {
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      if (bar.scrollWidth <= bar.clientWidth) return;
+      event.preventDefault();
+      bar.scrollLeft += event.deltaY;
+    }, { passive: false });
   }
 
   function isTypingTarget(target) {
@@ -802,6 +829,256 @@ const TV = (() => {
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${snippetButtons}</div>`;
   }
 
+  function mutateExpressionBuilderHtml(targetId, cols, options = {}) {
+    const functions = options.functions || [];
+    const snippetDefs = options.snippets || [
+      { insert: ' + ', label: '+ add' },
+      { insert: ' - ', label: '- subtract' },
+      { insert: ' * ', label: '* multiply' },
+      { insert: ' / ', label: '/ divide' },
+      { insert: ' == ', label: '= equals' },
+      { insert: ' != ', label: '!= not equal' },
+      { insert: ' > ', label: '> greater than' },
+      { insert: ' < ', label: '< less than' },
+      { insert: ' >= ', label: '>= at least' },
+      { insert: ' <= ', label: '<= at most' },
+      { insert: ' & ', label: 'and' },
+      { insert: ' | ', label: 'or' },
+      { insert: ' %in% ', label: 'in list' },
+      { insert: 'ifelse(', label: 'ifelse()' },
+      { insert: '(', label: '(' },
+      { insert: ')', label: ')' }
+    ];
+    const colOpts = (cols || []).map(c => `<option value="${escapeAttr(rName(c.name))}">${escapeHtml(c.name)}</option>`).join('');
+    const friendlyFnLabel = fn => {
+      const clean = String(fn || '').replace(/^data\.table::/, '');
+      const labels = {
+        round: 'round a result',
+        abs: 'absolute value',
+        trimws: 'trim spaces',
+        startsWith: 'starts with',
+        endsWith: 'ends with',
+        'tools::toTitleCase': 'title case text',
+        'as.Date': 'parse as Date',
+        'data.table::as.IDate': 'parse as IDate',
+        format: 'format a date or value',
+        difftime: 'difference between dates',
+        'as.numeric': 'convert to number',
+        'as.character': 'convert to text',
+        'as.integer': 'convert to whole number',
+        'as.logical': 'convert to TRUE/FALSE',
+        ifelse: 'basic if/else',
+        grepl: 'detect text pattern',
+        gsub: 'replace matching text',
+        sub: 'replace first match',
+        'data.table::fifelse': 'fast if/else',
+        'data.table::fcoalesce': 'fill missing values',
+        'data.table::shift': 'lead or lag',
+        'data.table::fcase': 'multiple conditions'
+      };
+      return `${labels[fn] || labels[clean] || clean} (${clean}())`;
+    };
+    const fnOpts = functions.map(fn => `<option value="${fn}(">${escapeHtml(friendlyFnLabel(fn))}</option>`).join('');
+    const snippetButtons = snippetDefs.map(snippet =>
+      `<button type="button" class="tv-chip" data-target-id="${escapeAttr(targetId)}" data-insert="${escapeAttr(snippet.insert)}" onclick="TV.insertExprFromButton(this)">${escapeHtml(snippet.label)}</button>`
+    ).join('');
+
+    return `
+      <div style="margin-top:10px;padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm);background:var(--md-surface-variant)">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:6px;font-weight:500">Build The Formula</div>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);line-height:1.6;margin-bottom:10px">
+          Start with the source column you want to use, then add a function or formula piece. tidyview will explain the formula below in plain English.
+        </div>
+        <div class="tv-builder-grid">
+          <div>
+            <div style="font-size:10px;color:var(--md-on-surface-variant);margin-bottom:4px;font-weight:500">source column</div>
+            <select class="tv-select tv-select-builder" onchange="TV.insertExpr('${targetId}', this.value);this.value=''">
+              <option value="">choose column...</option>${colOpts}
+            </select>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--md-on-surface-variant);margin-bottom:4px;font-weight:500">common function</div>
+            <select class="tv-select tv-select-builder" onchange="TV.insertExpr('${targetId}', this.value);this.value=''">
+              <option value="">choose function...</option>${fnOpts}
+            </select>
+          </div>
+        </div>
+        <div style="margin-top:10px">
+          <div style="font-size:10px;color:var(--md-on-surface-variant);margin-bottom:6px;font-weight:500">formula pieces</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">${snippetButtons}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function formatEnglishList(items, conjunction = 'and') {
+    const vals = (items || []).filter(Boolean);
+    if (!vals.length) return '';
+    if (vals.length === 1) return vals[0];
+    if (vals.length === 2) return `${vals[0]} ${conjunction} ${vals[1]}`;
+    return `${vals.slice(0, -1).join(', ')}, ${conjunction} ${vals[vals.length - 1]}`;
+  }
+
+  function detectExprColumns(expr, cols) {
+    const text = String(expr || '');
+    if (!text.trim()) return [];
+    const names = (cols || []).map(c => String(c.name ?? '')).filter(Boolean);
+    return names.filter(name => {
+      const codeName = rName(name);
+      if (codeName !== name) return text.includes(codeName);
+      const escaped = escapeRegex(name);
+      return new RegExp(`(^|[^A-Za-z0-9._])${escaped}([^A-Za-z0-9._]|$)`).test(text);
+    });
+  }
+
+  function humanizeMutateExpr(expr, cols) {
+    const text = String(expr || '').trim();
+    const sources = detectExprColumns(text, cols);
+    const sourceText = sources.length ? formatEnglishList(sources.map(name => `"${name}"`)) : '';
+
+    if (!text) return { sources, summary: 'Choose a source column and tell tidyview how to transform it.' };
+
+    const roundMatch = text.match(/^round\((.+),\s*([0-9]+)\)$/);
+    if (roundMatch) {
+      const inner = roundMatch[1].trim();
+      const digits = Number(roundMatch[2]);
+      const digitsText = digits === 0 ? 'a whole number' : `${digits} decimal place${digits === 1 ? '' : 's'}`;
+      const innerSources = detectExprColumns(inner, cols);
+      const innerSourceText = innerSources.length ? `"${innerSources[0]}"` : 'the source value';
+      const divMatch = inner.match(/^(.+?)\s*\/\s*([0-9.]+)$/);
+      const multMatch = inner.match(/^(.+?)\s*\*\s*([0-9.]+)$/);
+      if (divMatch && innerSources.length === 1) {
+        return { sources, summary: `Take ${innerSourceText}, divide it by ${divMatch[2]}, then round the result to ${digitsText}.` };
+      }
+      if (multMatch && innerSources.length === 1) {
+        return { sources, summary: `Take ${innerSourceText}, multiply it by ${multMatch[2]}, then round the result to ${digitsText}.` };
+      }
+      return { sources, summary: `Calculate a value from ${sourceText || 'the selected inputs'}, then round the result to ${digitsText}.` };
+    }
+
+    if (/^data\.table::fifelse\(/.test(text) || /^ifelse\(/.test(text)) {
+      return { sources, summary: `Check a condition row by row, then return one value when it is true and another value when it is false${sourceText ? ` using ${sourceText}` : ''}.` };
+    }
+    if (/^data\.table::fcoalesce\(/.test(text)) {
+      return { sources, summary: `Fill missing values by taking the first non-missing value from ${sourceText || 'the listed inputs'} from left to right.` };
+    }
+    if (/^data\.table::shift\(/.test(text)) {
+      const typeMatch = text.match(/type\s*=\s*"([^"]+)"/);
+      const nMatch = text.match(/n\s*=\s*([0-9]+)L?/);
+      const kind = (typeMatch && typeMatch[1]) === 'lead' ? 'next' : 'previous';
+      const count = nMatch ? nMatch[1] : '1';
+      return { sources, summary: `Use the ${kind} value ${count} row${count === '1' ? '' : 's'} away from ${sourceText || 'the chosen source column'}.` };
+    }
+    if (/^(data\.table::as\.IDate|as\.Date)\(/.test(text)) {
+      return { sources, summary: `Parse ${sourceText || 'the source text'} as a date value.` };
+    }
+    if (/^as\.integer\(format\(.+,"%Y"\)\)/.test(text)) {
+      return { sources, summary: `Extract the year from ${sourceText || 'the source date'}.` };
+    }
+    if (/^as\.integer\(format\(.+,"%m"\)\)/.test(text)) {
+      return { sources, summary: `Extract the month number from ${sourceText || 'the source date'}.` };
+    }
+    if (/^as\.integer\(format\(.+,"%d"\)\)/.test(text)) {
+      return { sources, summary: `Extract the day of the month from ${sourceText || 'the source date'}.` };
+    }
+    if (/^format\(.+,"%Y-%m"\)/.test(text)) {
+      return { sources, summary: `Turn ${sourceText || 'the source date'} into a year-month text value.` };
+    }
+    if (/^grepl\(/.test(text)) {
+      return { sources, summary: `Check whether ${sourceText || 'the source text'} matches a pattern and return TRUE or FALSE.` };
+    }
+    if (/^gsub\(/.test(text)) {
+      return { sources, summary: `Replace every matching piece of text in ${sourceText || 'the source column'}.` };
+    }
+    if (/^sub\(/.test(text)) {
+      return { sources, summary: `Replace the first matching piece of text in ${sourceText || 'the source column'}.` };
+    }
+    if (/^trimws\(/.test(text)) {
+      return { sources, summary: `Trim extra spaces from ${sourceText || 'the source text'}.` };
+    }
+    if (/tools::toTitleCase\(/.test(text)) {
+      return { sources, summary: `Convert ${sourceText || 'the source text'} to title case.` };
+    }
+    if (/^factor\(/.test(text)) {
+      return { sources, summary: 'Turn the result into a factor, so it behaves like a categorical value.' };
+    }
+    if (sources.length === 1) {
+      return { sources, summary: `Use ${sourceText} to calculate a new value with this formula.` };
+    }
+    if (sources.length > 1) {
+      return { sources, summary: `Combine ${sourceText} to calculate a new value with this formula.` };
+    }
+    return { sources, summary: 'Use this formula exactly as written to calculate the new column.' };
+  }
+
+  function buildFilterConditionExpr(condition) {
+    const col = condition?.col;
+    const op = condition?.op || '==';
+    const rawVal = condition?.val || '';
+    if (!col) return '';
+    if (op === 'is.na') return `is.na(${rName(col)})`;
+    if (op === '!is.na') return `!is.na(${rName(col)})`;
+    if (op === '%like%') return `grepl(${rString(rawVal || '')}, as.character(${rName(col)}), fixed = TRUE)`;
+    const formatted = formatFilterHelperValue(col, op, rawVal);
+    return `${rName(col)} ${op} ${formatted}`;
+  }
+
+  function buildFilterConditionsExpr(conditions, logic = 'AND') {
+    const parts = (conditions || []).map(buildFilterConditionExpr).filter(Boolean);
+    if (!parts.length) return '';
+    return logic === 'OR' ? parts.join(' | ') : parts.join(' & ');
+  }
+
+  function describeFilterCondition(condition) {
+    const col = condition?.col;
+    const op = condition?.op || '==';
+    const rawVal = String(condition?.val || '').trim();
+    if (!col) return '';
+    const wrappedCol = `"${col}"`;
+    const opLabels = {
+      '==': 'equals',
+      '!=': 'does not equal',
+      '>': 'is greater than',
+      '>=': 'is at least',
+      '<': 'is less than',
+      '<=': 'is at most',
+      '%in%': 'is in',
+      '!%in%': 'is not in',
+      '%like%': 'contains',
+      'is.na': 'is missing',
+      '!is.na': 'is not missing',
+    };
+    const formatHumanValue = value => {
+      const text = String(value || '').trim();
+      if (/^-?\d+(?:\.\d+)?$/.test(text) || /^(TRUE|FALSE)$/i.test(text)) return text;
+      return `"${text}"`;
+    };
+    if (op === 'is.na' || op === '!is.na') return `${wrappedCol} ${opLabels[op]}`;
+    if (op === '%in%' || op === '!%in%') {
+      const parts = rawVal.split(',').map(x => x.trim()).filter(Boolean);
+      const values = parts.length ? formatEnglishList(parts.map(formatHumanValue), 'or') : 'the listed values';
+      return `${wrappedCol} ${opLabels[op]} ${values}`;
+    }
+    if (op === '%like%') return `${wrappedCol} contains ${formatHumanValue(rawVal)}`;
+    return `${wrappedCol} ${opLabels[op] || op} ${formatHumanValue(rawVal)}`;
+  }
+
+  function describeFilterSelection(mode, cols, predicateText) {
+    const sources = (cols || []).filter(Boolean);
+    if (!sources.length) {
+      return {
+        sourceSummary: 'Source columns: choose one or more columns.',
+        friendlySummary: 'Choose one or more columns, then tell tidyview what each row should match.',
+      };
+    }
+    const sourceList = formatEnglishList(sources.map(col => `"${col}"`));
+    const quantifier = mode === 'if_all' ? 'all of' : 'any of';
+    return {
+      sourceSummary: `Source columns: ${sources.join(', ')}`,
+      friendlySummary: `Keep rows where ${quantifier} ${sourceList} ${predicateText}.`,
+    };
+  }
+
   function insertExpr(targetId, snippet) {
     const input = $(targetId);
     if (!input) return;
@@ -813,6 +1090,14 @@ const TV = (() => {
     input.selectionStart = nextPos;
     input.selectionEnd = nextPos;
     input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function insertExprFromButton(button) {
+    if (!button) return;
+    const targetId = button.getAttribute('data-target-id') || '';
+    const snippet = button.getAttribute('data-insert') || '';
+    if (!targetId) return;
+    insertExpr(targetId, snippet);
   }
 
   function caseWhenBuilderHtml(prefix, options = {}) {
@@ -936,14 +1221,14 @@ const TV = (() => {
 
     const bodyHtml = `
       <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:12px">
-        Keep rows with standard conditions, or use if_any / if_all style helpers across multiple columns.
+        Choose the rows you want to keep. You can write step-by-step rules, or check the same rule across several columns at once.
       </div>
       <div class="tv-field" style="margin-top:0">
-        <label class="tv-field-label">mode</label>
+        <label class="tv-field-label">how to choose rows</label>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="tv-chip selected" id="filter-mode-conditions" onclick="TV.setFilterMode('conditions')">conditions</button>
-          <button class="tv-chip" id="filter-mode-ifany" onclick="TV.setFilterMode('if_any')">if_any</button>
-          <button class="tv-chip" id="filter-mode-ifall" onclick="TV.setFilterMode('if_all')">if_all</button>
+          <button class="tv-chip selected" id="filter-mode-conditions" onclick="TV.setFilterMode('conditions')">step-by-step rules</button>
+          <button class="tv-chip" id="filter-mode-ifany" onclick="TV.setFilterMode('if_any')">match any column</button>
+          <button class="tv-chip" id="filter-mode-ifall" onclick="TV.setFilterMode('if_all')">match all columns</button>
         </div>
       </div>
 
@@ -951,10 +1236,10 @@ const TV = (() => {
         <div id="cond-list"></div>
         <button class="tv-add-btn" onclick="TV.addCondition()">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="7" y1="2" x2="7" y2="12"/><line x1="2" y1="7" x2="12" y2="7"/></svg>
-          add condition
+          add rule
         </button>
         <div style="margin-top:16px;display:flex;align-items:center;gap:8px">
-          <span style="font-size:12px;color:var(--md-on-surface-variant)">combine with:</span>
+          <span style="font-size:12px;color:var(--md-on-surface-variant)">when using several rules:</span>
           <button class="tv-chip selected" id="logic-and" onclick="TV.setLogic('AND')">AND</button>
           <button class="tv-chip" id="logic-or" onclick="TV.setLogic('OR')">OR</button>
         </div>
@@ -962,14 +1247,14 @@ const TV = (() => {
 
       <div id="filter-helper-section" style="display:none">
         <div class="tv-field">
-          <label class="tv-field-label">columns</label>
+          <label class="tv-field-label">source columns</label>
           <div id="filter-helper-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:28px"></div>
           <select class="tv-select" id="filter-helper-add" onchange="TV.addFilterHelperCol(this.value);this.value=''">
             <option value="">add column...</option>${colOpts}
           </select>
         </div>
         <div class="tv-field">
-          <label class="tv-field-label">predicate</label>
+          <label class="tv-field-label">matching rule</label>
           <select class="tv-select" id="filter-helper-op" onchange="TV.updateFilterHelperPreview()">
             <option value="==">equals</option>
             <option value="!=">not equal</option>
@@ -985,8 +1270,8 @@ const TV = (() => {
           </select>
         </div>
         <div class="tv-field">
-          <label class="tv-field-label">value</label>
-          <input class="tv-input" id="filter-helper-val" placeholder="e.g. 1, North, A,B,C" oninput="TV.updateFilterHelperPreview()">
+          <label class="tv-field-label">compare to</label>
+          <input class="tv-input" id="filter-helper-val" placeholder="e.g. 1, North, or A,B,C" oninput="TV.updateFilterHelperPreview()">
         </div>
         <div style="padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm)">
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:5px;font-weight:500">generated R</div>
@@ -1001,6 +1286,16 @@ const TV = (() => {
 
       <div id="filter-standard-impact" style="margin-top:8px;padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm);font-size:11px;color:var(--md-on-surface-variant)">
         Add at least one condition to preview the impact.
+      </div>
+      <div style="margin-top:10px;background:var(--md-surface-variant);border-radius:8px;padding:10px 12px;border:1px solid var(--md-outline-variant)">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:6px;font-weight:500">What This Will Do</div>
+        <div id="filter-target-summary" style="font-size:12px;color:var(--md-on-surface);margin-bottom:6px">Rows kept: choose at least one rule.</div>
+        <div id="filter-source-summary" style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:6px">Source columns: none selected yet.</div>
+        <div id="filter-friendly-summary" style="font-size:11px;color:var(--md-on-surface);line-height:1.6;margin-bottom:10px">Choose the rule that rows must match to stay in the table.</div>
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:5px;font-weight:500">Generated R</div>
+        <div id="filter-preview-code" style="font:var(--tv-type-mono);font-size:11px;line-height:1.7;color:var(--md-on-surface);white-space:pre-wrap">
+          <span style="color:var(--md-on-surface-variant);font-style:italic">Choose a rule above...</span>
+        </div>
       </div>`;
 
     panelShell(pane, FILTER_SVG, 'filter rows', `DT[i] · ${state.nrow.toLocaleString()} rows`, bodyHtml, applyFilter);
@@ -1040,7 +1335,7 @@ const TV = (() => {
         <option value="is.na">is NA</option>
         <option value="!is.na">not NA</option>
       </select>
-      <input class="tv-input" style="padding:7px 10px;font-size:12px" id="val-${id}" placeholder="value" oninput="TV.updateFilterConditionsPreview()">
+      <input class="tv-input" style="padding:7px 10px;font-size:12px" id="val-${id}" placeholder="value or values" oninput="TV.updateFilterConditionsPreview()">
       <button onclick="TV.removeCondition(${id})" style="width:28px;height:28px;border-radius:50%;border:none;background:transparent;cursor:pointer;color:var(--md-on-surface-variant);font-size:16px;display:flex;align-items:center;justify-content:center">✕</button>`;
     list.appendChild(row);
     updateFilterConditionsPreview();
@@ -1078,6 +1373,12 @@ const TV = (() => {
     if (condSection) condSection.style.display = mode === 'conditions' ? '' : 'none';
     if (helperSection) helperSection.style.display = mode === 'conditions' ? 'none' : '';
     if (stdImpact) stdImpact.style.display = mode === 'conditions' ? '' : 'none';
+    const targetEl = $('filter-target-summary');
+    if (targetEl) {
+      targetEl.textContent = mode === 'conditions'
+        ? 'Rows kept: choose at least one rule.'
+        : 'Rows kept: choose columns and one shared rule.';
+    }
   }
 
   function addFilterHelperCol(col) {
@@ -1141,21 +1442,42 @@ const TV = (() => {
 
   function updateFilterHelperPreview() {
     const prev = $('filter-helper-preview');
+    const summaryPrev = $('filter-preview-code');
+    const sourceEl = $('filter-source-summary');
+    const friendlyEl = $('filter-friendly-summary');
+    const targetEl = $('filter-target-summary');
     if (!prev) return;
     const expr = buildFilterHelperExpr();
     if (!expr) {
       prev.innerHTML = `<span style="color:var(--md-on-surface-variant);font-style:italic">choose columns above...</span>`;
       const impact = $('filter-impact');
       if (impact) impact.textContent = 'Choose columns above to preview the impact.';
+      if (summaryPrev) summaryPrev.innerHTML = `<span style="color:var(--md-on-surface-variant);font-style:italic">Choose columns and a rule above...</span>`;
+      if (targetEl) targetEl.textContent = 'Rows kept: choose columns and one shared rule.';
+      if (sourceEl) sourceEl.textContent = 'Source columns: none selected yet.';
+      if (friendlyEl) friendlyEl.textContent = 'Choose one or more columns, then tell tidyview what each row should match.';
       return;
     }
     prev.textContent = `${rName(state.name || 'DT')} <- ${rName(state.name || 'DT')}[${expr}]`;
+    if (summaryPrev) summaryPrev.textContent = `${rName(state.name || 'DT')} <- ${rName(state.name || 'DT')}[${expr}]`;
+    const cols = window.__filterHelperCols || [];
+    const op = $('filter-helper-op')?.value || '==';
+    const rawVal = $('filter-helper-val')?.value || '';
+    const predicateText = describeFilterCondition({ col: cols[0], op, val: rawVal }).replace(/^"[^"]+"\s+/, '');
+    const friendly = describeFilterSelection(window.__filterMode || 'if_any', cols, predicateText || 'match the chosen rule');
+    if (targetEl) targetEl.textContent = 'Rows kept: rows that match the shared rule.';
+    if (sourceEl) sourceEl.textContent = friendly.sourceSummary;
+    if (friendlyEl) friendlyEl.textContent = friendly.friendlySummary;
     requestFilterPreview({ expr });
   }
 
   function updateFilterConditionsPreview() {
     if ((window.__filterMode || 'conditions') !== 'conditions') return;
     const impact = $('filter-standard-impact');
+    const summaryPrev = $('filter-preview-code');
+    const targetEl = $('filter-target-summary');
+    const sourceEl = $('filter-source-summary');
+    const friendlyEl = $('filter-friendly-summary');
     const conditions = (window.__conditions || []).map(id => ({
       col: $('col-' + id)?.value,
       op:  $('op-'  + id)?.value,
@@ -1163,8 +1485,22 @@ const TV = (() => {
     })).filter(c => c.col);
     if (!conditions.length) {
       if (impact) impact.textContent = 'Add at least one condition to preview the impact.';
+      if (summaryPrev) summaryPrev.innerHTML = `<span style="color:var(--md-on-surface-variant);font-style:italic">Choose a rule above...</span>`;
+      if (targetEl) targetEl.textContent = 'Rows kept: choose at least one rule.';
+      if (sourceEl) sourceEl.textContent = 'Source columns: none selected yet.';
+      if (friendlyEl) friendlyEl.textContent = 'Choose the rule that rows must match to stay in the table.';
       return;
     }
+    const expr = buildFilterConditionsExpr(conditions, window.__filterLogic);
+    const logicWord = window.__filterLogic === 'OR' ? 'or' : 'and';
+    const sourceCols = [...new Set(conditions.map(c => c.col).filter(Boolean))];
+    const ruleSummary = formatEnglishList(conditions.map(describeFilterCondition), logicWord);
+    if (summaryPrev) summaryPrev.textContent = `${rName(state.name || 'DT')} <- ${rName(state.name || 'DT')}[${expr}]`;
+    if (targetEl) targetEl.textContent = window.__filterLogic === 'OR'
+      ? 'Rows kept: rows that match at least one rule.'
+      : 'Rows kept: rows that match every rule.';
+    if (sourceEl) sourceEl.textContent = `Source columns: ${sourceCols.join(', ')}`;
+    if (friendlyEl) friendlyEl.textContent = `Keep rows where ${ruleSummary}.`;
     requestFilterPreview({ conditions, logic: window.__filterLogic });
   }
 
@@ -1294,7 +1630,11 @@ const TV = (() => {
   function renderMutatePanel(pane) {
     if (!state.dt) return;
     const helperColOpts = state.dt.map(c => `<option value="${escapeAttr(rName(c.name))}">${escapeHtml(c.name)}</option>`).join('');
-    const builderHtml = expressionBuilderHtml('mut-expr', state.dt, {
+    const numericColOpts = state.dt
+      .filter(c => ['int', 'dbl'].includes(c.type))
+      .map(c => `<option value="${escapeAttr(rName(c.name))}">${escapeHtml(c.name)}</option>`)
+      .join('');
+    const builderHtml = mutateExpressionBuilderHtml('mut-expr', state.dt, {
       functions: ['round','floor','ceiling','abs','log','log2','log10','sqrt',
         'cumsum','cumprod','cummax','cummin','nchar','toupper','tolower',
         'trimws','startsWith','endsWith','tools::toTitleCase','as.Date','data.table::as.IDate','format','difftime','as.numeric','as.character','as.integer','as.logical','ifelse',
@@ -1311,6 +1651,7 @@ const TV = (() => {
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:8px;font-weight:500">common helpers</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
           <button class="tv-chip selected" id="mut-helper-manual">manual</button>
+          <button class="tv-chip" id="mut-helper-convert">conversion</button>
           <button class="tv-chip" id="mut-helper-ifelse">if_else</button>
           <button class="tv-chip" id="mut-helper-coalesce">coalesce</button>
           <button class="tv-chip" id="mut-helper-shift">lead / lag</button>
@@ -1321,7 +1662,51 @@ const TV = (() => {
         </div>
 
         <div id="mut-helper-manual-panel" style="font-size:11px;color:var(--md-on-surface-variant);line-height:1.6">
-          Use the expression box directly, or choose a helper to generate a paste-ready expression for you.
+          <div style="margin-bottom:8px">
+            Start with a column, a function, or one of these example patterns. Replace the sample column names with your own if needed.
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button type="button" class="tv-chip" onclick="TV.insertExpr('mut-expr', 'round(height / 2.54, 1)')">cm -&gt; inches</button>
+            <button type="button" class="tv-chip" onclick="TV.insertExpr('mut-expr', 'round(mass * 2.205, 1)')">kg -&gt; pounds</button>
+            <button type="button" class="tv-chip" onclick="TV.insertExpr('mut-expr', 'trimws(as.character(name))')">trim text</button>
+            <button type="button" class="tv-chip" onclick="TV.insertExpr('mut-expr', 'data.table::fifelse(is.na(x), 0, x)')">fill missing</button>
+          </div>
+        </div>
+
+        <div id="mut-helper-convert-panel" style="display:none">
+          <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.6">
+            Build common unit conversions without typing the full expression by hand.
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div>
+              <div style="font-size:10px;color:var(--md-on-surface-variant);margin-bottom:4px;font-weight:500">source column</div>
+              <select class="tv-select" id="mut-convert-source" style="font-size:12px">
+                <option value="">choose numeric column...</option>${numericColOpts}
+              </select>
+            </div>
+            <div>
+              <div style="font-size:10px;color:var(--md-on-surface-variant);margin-bottom:4px;font-weight:500">conversion</div>
+              <select class="tv-select" id="mut-convert-kind" style="font-size:12px">
+                <option value="cm_to_in">centimeters -&gt; inches</option>
+                <option value="in_to_cm">inches -&gt; centimeters</option>
+                <option value="kg_to_lb">kilograms -&gt; pounds</option>
+                <option value="lb_to_kg">pounds -&gt; kilograms</option>
+                <option value="m_to_ft">meters -&gt; feet</option>
+                <option value="ft_to_m">feet -&gt; meters</option>
+                <option value="prop_to_pct">proportion -&gt; percent</option>
+                <option value="pct_to_prop">percent -&gt; proportion</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+            <div>
+              <div style="font-size:10px;color:var(--md-on-surface-variant);margin-bottom:4px;font-weight:500">round digits</div>
+              <input class="tv-input" id="mut-convert-digits" type="number" min="0" step="1" value="1" style="font-family:var(--tv-type-mono);font-size:12px">
+            </div>
+            <div style="font-size:10px;color:var(--md-on-surface-variant);line-height:1.6;align-self:end">
+              Tip: name the output column with the new unit, like <code>height_in</code> or <code>mass_lb</code>.
+            </div>
+          </div>
         </div>
 
         <div id="mut-helper-ifelse-panel" style="display:none">
@@ -1560,8 +1945,8 @@ const TV = (() => {
       </div>`;
     const bodyHtml = `
       <div class="tv-field">
-        <label class="tv-field-label">new column name</label>
-        <input class="tv-input" id="mut-name" placeholder="e.g. tax_amount">
+        <label class="tv-field-label">result column name</label>
+        <input class="tv-input" id="mut-name" placeholder="e.g. tax_amount or height_in">
       </div>
       <div class="tv-field">
         <label class="tv-field-label">mode</label>
@@ -1572,22 +1957,34 @@ const TV = (() => {
       </div>
       <div class="tv-field">
         <label class="tv-field-label">expression</label>
-        <textarea class="tv-input" id="mut-expr" placeholder="e.g. amount * 0.12" style="font-family:var(--tv-type-mono);min-height:92px;resize:vertical"></textarea>
+        <textarea class="tv-input" id="mut-expr" placeholder="e.g. round(height / 2.54, 1)" style="font-family:var(--tv-type-mono);min-height:92px;resize:vertical"></textarea>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-top:6px;line-height:1.6">
+          Type the formula yourself, or let the builder and helpers below create it for you.
+        </div>
         <div id="mut-expression-tools">${builderHtml}${helperHtml}</div>
         <div id="mut-case-tools" style="display:none">${caseHtml}</div>
       </div>
-      <div style="background:var(--md-surface-variant);border-radius:8px;padding:10px 12px;font:var(--tv-type-mono);font-size:11px;color:var(--md-on-surface-variant)">
-        preview: <span id="mut-preview" style="color:var(--md-on-surface)">mutate(.data, &lt;name&gt; = &lt;expr&gt;)</span>
+      <div style="background:var(--md-surface-variant);border-radius:8px;padding:10px 12px;border:1px solid var(--md-outline-variant)">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:6px;font-weight:500">What This Will Do</div>
+        <div id="mut-target-summary" style="font-size:12px;color:var(--md-on-surface);margin-bottom:6px">Result column: choose a name above.</div>
+        <div id="mut-source-summary" style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:6px">Source columns: none detected yet.</div>
+        <div id="mut-friendly-summary" style="font-size:11px;color:var(--md-on-surface);line-height:1.6;margin-bottom:10px">Choose a source column and tell tidyview how to transform it.</div>
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:5px;font-weight:500">Generated R</div>
+        <div class="tv-preview-code-left" style="font:var(--tv-type-mono);font-size:11px;color:var(--md-on-surface-variant)"><span id="mut-preview" style="color:var(--md-on-surface)">mutate(.data, &lt;name&gt; = &lt;expr&gt;)</span></div>
       </div>`;
 
-    panelShell(pane, MUTATE_SVG, 'mutate', 'mutate(.data, new_col = expr)', bodyHtml, applyMutate);
+    panelShell(pane, MUTATE_SVG, 'mutate', 'create or update a column from other columns', bodyHtml, applyMutate);
 
     const nameEl = $('mut-name'), exprEl = $('mut-expr');
     let helperMode = 'manual';
     window.__mutateHelperState = { mode: 'manual', acrossCols: [] };
     const update = () => {
       const p = $('mut-preview');
+      const targetEl = $('mut-target-summary');
+      const sourceEl = $('mut-source-summary');
+      const friendlyEl = $('mut-friendly-summary');
       if (!p) return;
+      const currentName = nameEl?.value?.trim() || '';
       if (helperMode === 'across') {
         const cols = window.__mutateHelperState?.acrossCols || [];
         const transform = $('mut-across-transform')?.value || '<fn>';
@@ -1595,11 +1992,22 @@ const TV = (() => {
         const nameValue = $('mut-across-name-value')?.value || '';
         const namesText = namesMode === 'overwrite' ? '.names = "{.col}"' : `.names = "${namesMode === 'prefix' ? nameValue + '{.col}' : '{.col}' + nameValue}"`;
         p.textContent = `mutate(.data, across(c(${cols.join(', ') || '...'}), ${transform === 'custom' ? '~ ' + ($('mut-across-template')?.value || '.x') : transform}, ${namesText}))`;
+        if (targetEl) targetEl.textContent = 'Result columns: update multiple columns at once.';
+        if (sourceEl) sourceEl.textContent = cols.length ? `Source columns: ${cols.join(', ')}` : 'Source columns: choose one or more columns.';
+        const acrossSummary = cols.length
+          ? `Apply ${transform === 'custom' ? 'your custom template' : `"${transform}"`} to ${formatEnglishList(cols.map(col => `"${col}"`))}${namesMode === 'overwrite' ? ' and keep the same column names.' : ` and write the results to ${namesMode === 'prefix' ? 'new prefixed names' : 'new suffixed names'}.`}`
+          : 'Choose one or more source columns to apply the same transformation across them.';
+        if (friendlyEl) friendlyEl.textContent = acrossSummary;
         return;
       }
-      const n = nameEl?.value || '<name>';
+      const n = currentName || '<name>';
       const e = exprEl?.value || '<expr>';
       p.textContent = `mutate(.data, ${n} = ${e})`;
+      const english = humanizeMutateExpr(exprEl?.value || '', state.dt || []);
+      const sourceSummary = english.sources.length ? `Source columns: ${english.sources.join(', ')}` : 'Source columns: none detected yet.';
+      if (targetEl) targetEl.textContent = currentName ? `Result column: create or update "${currentName}".` : 'Result column: choose a name above.';
+      if (sourceEl) sourceEl.textContent = sourceSummary;
+      if (friendlyEl) friendlyEl.textContent = english.summary;
     };
     const setExpr = (expr) => {
       if (!exprEl) return;
@@ -1608,6 +2016,28 @@ const TV = (() => {
     };
     const syncHelper = () => {
       if (!exprEl) return;
+      if (helperMode === 'convert') {
+        const source = $('mut-convert-source')?.value?.trim() || '';
+        const kind = $('mut-convert-kind')?.value || 'cm_to_in';
+        const digits = String(Math.max(0, parseInt($('mut-convert-digits')?.value || '1', 10) || 0));
+        if (!source) {
+          setExpr('');
+          return;
+        }
+        const rounded = inner => `round(${inner}, ${digits})`;
+        const exprMap = {
+          cm_to_in: rounded(`${source} / 2.54`),
+          in_to_cm: rounded(`${source} * 2.54`),
+          kg_to_lb: rounded(`${source} * 2.205`),
+          lb_to_kg: rounded(`${source} / 2.205`),
+          m_to_ft: rounded(`${source} * 3.28084`),
+          ft_to_m: rounded(`${source} / 3.28084`),
+          prop_to_pct: rounded(`${source} * 100`),
+          pct_to_prop: rounded(`${source} / 100`)
+        };
+        setExpr(exprMap[kind] || '');
+        return;
+      }
       if (helperMode === 'ifelse') {
         const cond = $('mut-ifelse-cond')?.value?.trim() || '';
         const yes = $('mut-ifelse-true')?.value?.trim() || '';
@@ -1791,7 +2221,7 @@ const TV = (() => {
     const setHelperMode = (mode) => {
       helperMode = mode;
       if (window.__mutateHelperState) window.__mutateHelperState.mode = mode;
-      ['manual', 'ifelse', 'coalesce', 'shift', 'date', 'string', 'regex', 'across'].forEach(name => {
+      ['manual', 'convert', 'ifelse', 'coalesce', 'shift', 'date', 'string', 'regex', 'across'].forEach(name => {
         $(`mut-helper-${name}`)?.classList.toggle('selected', name === mode);
         const panelId = name === 'manual' ? 'mut-helper-manual-panel' : `mut-helper-${name}-panel`;
         const panel = $(panelId);
@@ -1814,6 +2244,7 @@ const TV = (() => {
     $('mut-mode-expression')?.addEventListener('click', () => setMode('expression'));
     $('mut-mode-case')?.addEventListener('click', () => setMode('case'));
     $('mut-helper-manual')?.addEventListener('click', () => setHelperMode('manual'));
+    $('mut-helper-convert')?.addEventListener('click', () => setHelperMode('convert'));
     $('mut-helper-ifelse')?.addEventListener('click', () => setHelperMode('ifelse'));
     $('mut-helper-coalesce')?.addEventListener('click', () => setHelperMode('coalesce'));
     $('mut-helper-shift')?.addEventListener('click', () => setHelperMode('shift'));
@@ -1822,6 +2253,7 @@ const TV = (() => {
     $('mut-helper-regex')?.addEventListener('click', () => setHelperMode('regex'));
     $('mut-helper-across')?.addEventListener('click', () => setHelperMode('across'));
     [
+      'mut-convert-source', 'mut-convert-kind', 'mut-convert-digits',
       'mut-ifelse-cond', 'mut-ifelse-true', 'mut-ifelse-false',
       'mut-coalesce-1', 'mut-coalesce-2', 'mut-coalesce-3',
       'mut-shift-type', 'mut-shift-n', 'mut-shift-source', 'mut-shift-fill',
@@ -1832,6 +2264,7 @@ const TV = (() => {
       'mut-across-names', 'mut-across-name-value'
     ].forEach(id => $(id)?.addEventListener('input', syncHelper));
     [
+      'mut-convert-source', 'mut-convert-kind',
       'mut-coalesce-1', 'mut-coalesce-2', 'mut-coalesce-3',
       'mut-shift-type', 'mut-shift-source', 'mut-date-source', 'mut-date-mode',
       'mut-string-source', 'mut-string-mode',
@@ -2153,11 +2586,11 @@ const TV = (() => {
           <div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:8px">RCDF import</div>
           <div class="tv-rcdf-intro">
             Use this order for encrypted RCDF files:
-            <br>1. load the PEM key
+            <br>1. load the decryption key
             <br>2. enter the key password
             <br>3. load the RCDF file
           </div>
-          <div class="tv-rcdf-step">Step 1 - PEM key</div>
+          <div class="tv-rcdf-step">Step 1 - Decryption key</div>
           <div class="tv-field" style="margin-bottom:10px">
             <label class="tv-field-label">decryption key path (optional)</label>
             <input class="tv-input" id="rcdf-key-path" placeholder="no key selected">
@@ -2174,6 +2607,15 @@ const TV = (() => {
             <label class="tv-field-label">key password (optional)</label>
             <input class="tv-input" id="rcdf-password" type="password" placeholder="password">
           </div>
+          <label style="display:flex;align-items:flex-start;gap:8px;margin-top:10px;font-size:11px;color:var(--md-on-surface);cursor:pointer">
+            <input type="checkbox" id="rcdf-return-meta" style="margin-top:2px">
+            <span>
+              <span style="display:block;font-weight:500">include RCDF metadata</span>
+              <span style="display:block;color:var(--md-on-surface-variant);line-height:1.5">
+                Attach RCDF metadata to the imported tables and include any tabular dictionary returned by <code>return_meta = TRUE</code>.
+              </span>
+            </span>
+          </label>
           <div class="tv-rcdf-step" style="margin-top:12px">Step 3 - RCDF file</div>
           <div class="tv-file-choice">
             <button class="tv-btn-filled" type="button" onclick="document.getElementById('rcdf-file-picker').click()">load RCDF file</button>
@@ -2259,8 +2701,8 @@ const TV = (() => {
     if (fileLabel) fileLabel.textContent = file.name;
     try {
       if (!keyPath && !keyFile) {
-        setRcdfStatus('Load the PEM key first, then try the RCDF file again.', 'error');
-        await showMessage('Step 1 is required first: load the PEM key path or choose the PEM key file.', { title: 'PEM Key Required' });
+        setRcdfStatus('Load the decryption key first, then try the RCDF file again.', 'error');
+        await showMessage('Step 1 is required first: load the decryption key path or choose the key file.', { title: 'Decryption Key Required' });
         return;
       }
       setRcdfStatus('Inspecting RCDF file...', 'info');
@@ -2268,6 +2710,7 @@ const TV = (() => {
         file_name: file.name,
         contents: await fileToBase64(file),
         password: $('rcdf-password')?.value || '',
+        return_meta: !!$('rcdf-return-meta')?.checked,
         rcdf_object_name: (file.name.replace(/\.[^.]+$/, '') || 'rcdf_data').replace(/[^A-Za-z0-9._]/g, '_'),
       };
       if (keyPath) payload.decryption_key = keyPath;
@@ -2281,6 +2724,7 @@ const TV = (() => {
         file_code_path: res.file_code_path,
         key_path: res.key_path,
         password: payload.password,
+        return_meta: !!res.return_meta,
         rcdf_object_name: res.rcdf_object_name,
         tables: res.tables || [],
       };
@@ -2303,11 +2747,16 @@ const TV = (() => {
       el.innerHTML = '';
       return;
     }
-    setRcdfStatus(`Found ${tables.length} RCDF table${tables.length === 1 ? '' : 's'}. Choose which ones to open below.`, 'success');
+    const includeMeta = !!state.rcdfImport?.return_meta;
+    setRcdfStatus(
+      `Found ${tables.length} RCDF table${tables.length === 1 ? '' : 's'}${includeMeta ? ', including metadata outputs.' : ''} Choose which ones to open below.`,
+      'success'
+    );
     el.style.display = '';
     el.innerHTML = `
       <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--md-primary);margin-bottom:8px">Step 4 - Choose tables to open</div>
       <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px">Select only the RCDF datasets you want to open as tabs.</div>
+      ${includeMeta ? '<div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px">RCDF metadata will be attached to the imported tables. If the RCDF includes a tabular data dictionary, it appears in the list below as its own table.</div>' : ''}
       <div id="rcdf-table-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">
         ${tables.map((tbl, idx) => `
           <label style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1px solid var(--md-outline-variant);border-radius:10px;cursor:pointer">
@@ -2350,6 +2799,7 @@ const TV = (() => {
         file_code_path: state.rcdfImport.file_code_path,
         key_path: state.rcdfImport.key_path,
         password: state.rcdfImport.password,
+        return_meta: !!state.rcdfImport.return_meta,
         rcdf_object_name: state.rcdfImport.rcdf_object_name,
         tables,
         as: tables.length === 1 ? 'DT' : '',
@@ -2947,7 +3397,7 @@ const TV = (() => {
     api,
     init, renderTable, renderHistory, sortBy, changePage, openPanel, closePanel,
     pushCode, setHistory, updateDimLabel, undo,
-    updateSourceChip, expressionBuilderHtml, insertExpr, openCellValue, closeCellValue,
+    updateSourceChip, expressionBuilderHtml, mutateExpressionBuilderHtml, insertExpr, insertExprFromButton, openCellValue, closeCellValue,
     openAppDialog, closeAppDialog, showMessage, showError, confirmMessage,
     addCondition, removeCondition, setLogic, setFilterMode, addFilterHelperCol, removeFilterHelperCol, updateFilterHelperPreview, updateFilterConditionsPreview,
     toggleSelectCol, selectAllCols,

@@ -288,16 +288,26 @@
   }
 
   password <- params$password %||% NULL
+  return_meta <- isTRUE(params$return_meta)
   object_name <- params$rcdf_object_name %||%
     make.names(tools::file_path_sans_ext(basename(file_info$code_path)))
-  inspect <- .inspect_rcdf_tables(file_info$path, key_info$path, password)
-  selected_name <- params$table %||% inspect$tables[[1]]$name
+  inspect <- .inspect_rcdf_tables(
+    file_info$path,
+    key_info$path,
+    password,
+    return_meta = return_meta
+  )
+  table_names <- vapply(inspect$tables, function(x) x$name, character(1))
+  preferred_tables <- table_names[!grepl("^__", table_names)]
+  selected_name <- params$table %||%
+    if (length(preferred_tables)) preferred_tables[[1]] else table_names[[1]]
   .load_rcdf_tables_into_state(
     state = state,
     file_path = file_info$path,
     file_code_path = file_info$code_path,
     key_path = key_info$path,
     password = password,
+    return_meta = return_meta,
     object_name = object_name,
     selected_tables = selected_name,
     as_name = params$as %||% "DT"
@@ -317,12 +327,19 @@
   )
   if (is.null(key_info)) stop("A decryption key is required for RCDF files.")
   password <- params$password %||% NULL
-  inspect <- .inspect_rcdf_tables(file_info$path, key_info$path, password)
+  return_meta <- isTRUE(params$return_meta)
+  inspect <- .inspect_rcdf_tables(
+    file_info$path,
+    key_info$path,
+    password,
+    return_meta = return_meta
+  )
   list(
     ok = TRUE,
     file_path = file_info$path,
     file_code_path = file_info$code_path,
     key_path = key_info$path,
+    return_meta = return_meta,
     rcdf_object_name = params$rcdf_object_name %||% make.names(tools::file_path_sans_ext(basename(file_info$code_path))),
     tables = inspect$tables
   )
@@ -341,6 +358,7 @@
     file_code_path = file_code_path,
     key_path = key_path,
     password = params$password %||% NULL,
+    return_meta = isTRUE(params$return_meta),
     object_name = params$rcdf_object_name %||% make.names(tools::file_path_sans_ext(basename(file_code_path))),
     selected_tables = selected_tables,
     as_name = params$as %||% "DT"
@@ -348,12 +366,13 @@
 }
 
 
-.inspect_rcdf_tables <- function(file_path, key_path, password = NULL) {
+.inspect_rcdf_tables <- function(file_path, key_path, password = NULL, return_meta = FALSE) {
   .tv_require_namespace("rcdf", "RCDF import")
   rcdf_obj <- rcdf::read_rcdf(
     path = file_path,
     decryption_key = key_path,
-    password = password
+    password = password,
+    return_meta = return_meta
   )
   table_names <- names(rcdf_obj)[vapply(
     rcdf_obj,
@@ -379,10 +398,16 @@
                                          file_code_path,
                                          key_path,
                                          password = NULL,
+                                         return_meta = FALSE,
                                          object_name,
                                          selected_tables,
                                          as_name = "DT") {
-  inspect <- .inspect_rcdf_tables(file_path, key_path, password)
+  inspect <- .inspect_rcdf_tables(
+    file_path,
+    key_path,
+    password,
+    return_meta = return_meta
+  )
   table_names <- vapply(inspect$tables, function(x) x$name, character(1))
   missing_tables <- setdiff(selected_tables, table_names)
   if (length(missing_tables)) {
@@ -393,7 +418,8 @@
     path = file_code_path,
     decryption_key = key_path,
     password = password,
-    object_name = object_name
+    object_name = object_name,
+    return_meta = return_meta
   )
 
   .flush_session(state)
@@ -401,6 +427,7 @@
   new_sessions <- lapply(selected_tables, function(table_name) {
     session_name <- if (length(selected_tables) == 1L && nzchar(as_name)) as_name else table_name
     dt <- data.table::as.data.table(.strip_labelled(inspect$obj[[table_name]]))
+    dt <- .tv_attach_rcdf_metadata(dt, inspect$obj, return_meta = return_meta)
     table_code <- sprintf(
       "%s <- data.table::as.data.table(%s[[%s]])",
       .code_name(session_name),

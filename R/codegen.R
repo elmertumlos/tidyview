@@ -13,6 +13,72 @@
 }
 
 
+.drop_na_cell_missing <- function(cell) {
+  if (is.null(cell) || length(cell) == 0L) return(TRUE)
+  if (is.list(cell)) {
+    if (!length(cell)) return(TRUE)
+    return(all(vapply(cell, .drop_na_cell_missing, logical(1))))
+  }
+  all(is.na(cell))
+}
+
+
+.drop_na_needs_list_safe <- function(dt, cols = character(0)) {
+  check_cols <- if (length(cols)) cols else names(dt)
+  any(vapply(check_cols, function(col) is.list(dt[[col]]), logical(1)))
+}
+
+
+.drop_na_mask <- function(dt, cols = character(0)) {
+  check_cols <- if (length(cols)) cols else names(dt)
+  if (!length(check_cols)) return(rep(TRUE, nrow(dt)))
+  if (!.drop_na_needs_list_safe(dt, check_cols)) {
+    if (length(cols)) {
+      return(stats::complete.cases(dt[, check_cols, with = FALSE]))
+    }
+    return(stats::complete.cases(dt))
+  }
+  vapply(seq_len(nrow(dt)), function(i) {
+    all(vapply(check_cols, function(col) {
+      !.drop_na_cell_missing(dt[[col]][[i]])
+    }, logical(1)))
+  }, logical(1))
+}
+
+
+.drop_na_code <- function(dt_name, dt, cols = character(0)) {
+  name_code <- .code_name(dt_name)
+  check_cols <- if (length(cols)) cols else names(dt)
+  if (!length(check_cols)) return(sprintf("%s <- %s", name_code, name_code))
+  if (!.drop_na_needs_list_safe(dt, check_cols)) {
+    if (length(cols)) {
+      return(sprintf(
+        "%s <- %s[stats::complete.cases(%s[, .(%s)])]",
+        name_code, name_code, name_code, .code_name_list(check_cols)
+      ))
+    }
+    return(sprintf("%s <- %s[stats::complete.cases(%s)]", name_code, name_code, name_code))
+  }
+  paste(
+    "..tv_missing_cell <- function(cell) {",
+    "  if (is.null(cell) || length(cell) == 0L) return(TRUE)",
+    "  if (is.list(cell)) {",
+    "    if (!length(cell)) return(TRUE)",
+    "    return(all(vapply(cell, ..tv_missing_cell, logical(1))))",
+    "  }",
+    "  all(is.na(cell))",
+    "}",
+    sprintf("..tv_cols <- c(%s)", .code_chr_vec(check_cols)),
+    sprintf("..tv_keep <- vapply(seq_len(nrow(%s)), function(i) {", name_code),
+    sprintf("  all(vapply(..tv_cols, function(col) !..tv_missing_cell(%s[[col]][[i]]), logical(1)))", name_code),
+    "}, logical(1))",
+    sprintf("%s <- %s[..tv_keep]", name_code, name_code),
+    "rm(..tv_cols, ..tv_keep, ..tv_missing_cell)",
+    sep = "\n"
+  )
+}
+
+
 #' @noRd
 .op_select <- function(params, state) {
   .ensure_state_dt(state)
@@ -70,7 +136,7 @@
                                  envir = state$dt)]
   .push_history(state, code_dt)
   list(code = code_dt, columns = .dt_column_meta(state$dt),
-       nrow = nrow(state$dt))
+       nrow = nrow(state$dt), ncol = ncol(state$dt))
 }
 
 
@@ -493,24 +559,13 @@
   cols <- as.character(unlist(params$columns %||% character(0)))
 
   .snapshot_state(state)
-  if (length(cols)) {
-    code_dt <- sprintf(
-      "%s <- %s[stats::complete.cases(%s[, .(%s)])]",
-      .code_name(state$name), .code_name(state$name), .code_name(state$name), .code_name_list(cols)
-    )
-    mask <- stats::complete.cases(state$dt[, cols, with = FALSE])
-  } else {
-    code_dt <- sprintf(
-      "%s <- %s[stats::complete.cases(%s)]",
-      .code_name(state$name), .code_name(state$name), .code_name(state$name)
-    )
-    mask <- stats::complete.cases(state$dt)
-  }
+  code_dt <- .drop_na_code(state$name, state$dt, cols)
+  mask <- .drop_na_mask(state$dt, cols)
 
   state$dt <- state$dt[mask, ]
   .push_history(state, code_dt)
   list(code = code_dt, columns = .dt_column_meta(state$dt),
-       nrow = nrow(state$dt), ncol = ncol(state$dt))
+         nrow = nrow(state$dt), ncol = ncol(state$dt))
 }
 
 
@@ -548,7 +603,7 @@
     sort_str <- if (sort) sprintf("\nresult <- result[order(-n)]") else ""
     code_dt  <- sprintf('result <- %s[, .(n = .N), by = .(%s)]%s',
                         .code_name(state$name), by_expr, sort_str)
-    state$dt <- state$dt[, .(n = .N), by = by_cols]
+    state$dt <- state$dt[, list(n = .N), by = by_cols]
     if (sort) state$dt <- state$dt[order(-n)]
   } else {
     code_dt  <- sprintf('result <- data.table::data.table(n = nrow(%s))', .code_name(state$name))
@@ -616,7 +671,7 @@
       .code_name(output_name), .code_name(state$name), weight_expr, .code_name(column)
     ))
   } else {
-    result <- state$dt[, .(n = .N), by = column]
+    result <- state$dt[, list(n = .N), by = column]
     code_lines <- c(code_lines, sprintf(
       '%s <- %s[, .(n = .N), by = .(%s)]',
       .code_name(output_name), .code_name(state$name), .code_name(column)
@@ -717,7 +772,7 @@
       .code_name(output_name), .code_name(state$name), weight_expr, .code_name(row_var), .code_name(col_var)
     ))
   } else {
-    long <- state$dt[, .(n = .N), by = c(row_var, col_var)]
+    long <- state$dt[, list(n = .N), by = c(row_var, col_var)]
     code_lines <- c(code_lines, sprintf(
       '%s <- %s[, .(n = .N), by = .(%s, %s)]',
       .code_name(output_name), .code_name(state$name), .code_name(row_var), .code_name(col_var)
@@ -877,23 +932,32 @@
   tos   <- vapply(mapping, function(m) as.character(m$to),   character(1))
   if (!length(froms)) stop("At least one mapping pair required.")
 
-  pairs_r <- paste(sprintf('%s = %s', vapply(froms, .str_lit, character(1)), vapply(tos, .str_lit, character(1))), collapse = ", ")
-  lookup  <- sprintf('c(%s)[as.character(%s)]', pairs_r, .code_name(col))
-
-  if (as_factor) {
-    lvls_r <- .code_chr_vec(tos)
-    code   <- sprintf('%s[, %s := factor(%s, levels = c(%s))]',
-                      .code_name(state$name), .code_name(target), lookup, lvls_r)
-  } else {
-    code   <- sprintf('%s[, %s := %s]', .code_name(state$name), .code_name(target), lookup)
-  }
-
   .snapshot_state(state)
-  lookup_vec <- setNames(tos, froms)
-  new_vals   <- lookup_vec[as.character(state$dt[[col]])]
+  base_vals <- as.character(state$dt[[col]])
+  match_idx <- match(base_vals, froms)
+  new_vals <- base_vals
+  hit <- !is.na(match_idx)
+  new_vals[hit] <- tos[match_idx[hit]]
+
+  cond_args <- character(0)
+  for (i in seq_along(froms)) {
+    cond_args <- c(
+      cond_args,
+      sprintf('as.character(%s) == %s', .code_name(col), .str_lit(froms[[i]])),
+      .str_lit(tos[[i]])
+    )
+  }
+  recode_expr <- sprintf('data.table::fcase(%s, default = as.character(%s))',
+                         paste(cond_args, collapse = ", "),
+                         .code_name(col))
+
   if (as_factor) {
-    state$dt[, (target) := factor(new_vals, levels = tos)]
+    level_order <- unique(c(tos, new_vals[!is.na(new_vals) & !(new_vals %in% tos)]))
+    code <- sprintf('%s[, %s := factor(%s, levels = c(%s))]',
+                    .code_name(state$name), .code_name(target), recode_expr, .code_chr_vec(level_order))
+    state$dt[, (target) := factor(new_vals, levels = level_order)]
   } else {
+    code <- sprintf('%s[, %s := %s]', .code_name(state$name), .code_name(target), recode_expr)
     state$dt[, (target) := new_vals]
   }
   .push_history(state, code)
@@ -1097,9 +1161,9 @@
   work_dt <- data.table::copy(dt)
   if (nzchar(weight_expr)) {
     work_dt[, ..tv_weight__ := eval(parse(text = weight_expr), envir = work_dt)]
-    work_dt[, .(n = sum(..tv_weight__, na.rm = TRUE)), by = by]
+    work_dt[, list(n = sum(..tv_weight__, na.rm = TRUE)), by = by]
   } else {
-    work_dt[, .(n = .N), by = by]
+    work_dt[, list(n = .N), by = by]
   }
 }
 
@@ -1332,7 +1396,7 @@
 
 
 .code_name <- function(name) {
-  name <- as.character(name)
+  name <- paste(as.character(name), collapse = "")
   if (grepl("^[A-Za-z.][A-Za-z0-9._]*$", name)) return(name)
   sprintf("`%s`", gsub("`", "\\\\`", name, fixed = TRUE))
 }

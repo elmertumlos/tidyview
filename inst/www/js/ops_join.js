@@ -20,48 +20,65 @@ TV.panels.join = function(pane) {
       </div>
       <div>
         <div class="tv-panel-title">join</div>
-        <div class="tv-panel-sub">inner_join() - left_join() - semi_join() - anti_join()</div>
+        <div class="tv-panel-sub">match rows between two tables and bring columns together</div>
       </div>
       <button class="tv-panel-close" onclick="TV.closePanel()">x</button>
     </div>
 
     <div class="tv-panel-body">
+      <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:14px;line-height:1.6">
+        Choose another table, tell tidyview how rows should match, and preview what rows will stay, disappear, or expand.
+      </div>
+
       <div class="tv-field">
-        <label class="tv-field-label">right-hand table (from R environment)</label>
+        <label class="tv-field-label">table to bring in from the R environment</label>
         <select class="tv-select" id="join-right" onchange="TVJOIN.updatePreview()">${tblOpts}</select>
       </div>
 
       <div class="tv-field">
-        <label class="tv-field-label">join type</label>
+        <label class="tv-field-label">how should tidyview keep rows?</label>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px" id="join-type-grid">
-          <button class="tv-chip selected" id="jt-inner" onclick="TVJOIN.setType('inner')">inner_join</button>
-          <button class="tv-chip" id="jt-left" onclick="TVJOIN.setType('left')">left_join</button>
-          <button class="tv-chip" id="jt-right" onclick="TVJOIN.setType('right')">right_join</button>
-          <button class="tv-chip" id="jt-full" onclick="TVJOIN.setType('full')">full_join</button>
-          <button class="tv-chip" id="jt-semi" onclick="TVJOIN.setType('semi')">semi_join</button>
-          <button class="tv-chip" id="jt-anti" onclick="TVJOIN.setType('anti')">anti_join</button>
+          <button class="tv-chip selected" id="jt-inner" onclick="TVJOIN.setType('inner')">keep only matching rows</button>
+          <button class="tv-chip" id="jt-left" onclick="TVJOIN.setType('left')">keep all current rows</button>
+          <button class="tv-chip" id="jt-right" onclick="TVJOIN.setType('right')">follow the other table</button>
+          <button class="tv-chip" id="jt-full" onclick="TVJOIN.setType('full')">keep rows from both tables</button>
+          <button class="tv-chip" id="jt-semi" onclick="TVJOIN.setType('semi')">keep current rows that match</button>
+          <button class="tv-chip" id="jt-anti" onclick="TVJOIN.setType('anti')">keep current rows with no match</button>
+        </div>
+        <div id="join-type-help" style="font-size:11px;color:var(--md-on-surface-variant);margin-top:8px;line-height:1.6">
+          Only rows with matching keys in both tables will remain. Unmatched rows from the current table will be dropped.
         </div>
       </div>
 
       <div class="tv-field">
-        <label class="tv-field-label">join keys</label>
+        <label class="tv-field-label">columns that identify the same row in both tables</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Add the column names that should match between the current table and the table you selected above.
+        </div>
         <div id="key-rows" style="margin-bottom:8px"></div>
         <button class="tv-add-btn" id="add-key-btn">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
             <line x1="7" y1="2" x2="7" y2="12"/><line x1="2" y1="7" x2="12" y2="7"/>
           </svg>
-          add key column
+          add matching column
         </button>
       </div>
 
-      <div style="padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm)">
-        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:5px;font-weight:500">generated R</div>
+      <div style="margin-top:8px;padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm);background:var(--md-surface-variant)">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:5px;font-weight:500">What This Will Do</div>
+        <div id="join-source-summary" style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:6px">Current table: "${TV.escapeHtml(TV.state.name || 'current table')}".</div>
+        <div id="join-target-summary" style="font-size:12px;color:var(--md-on-surface);margin-bottom:6px">Result: choose another table and at least one matching column.</div>
+        <div id="join-friendly-summary" style="font-size:11px;color:var(--md-on-surface);line-height:1.6;margin-bottom:10px">Choose how rows should match and tidyview will explain the result here.</div>
+        <div id="join-impact" style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px">
+          Choose a table and at least one matching column to preview the impact.
+        </div>
+        <div id="join-warning" style="font-size:11px;color:var(--md-on-surface-variant);line-height:1.6;margin-bottom:10px">
+          Join warnings will appear here once you choose a table and matching columns.
+        </div>
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:5px;font-weight:500">Generated R</div>
         <div id="join-preview" style="font:var(--tv-type-mono);font-size:11px;line-height:1.7;color:var(--md-on-surface);white-space:pre-wrap">
           <span style="color:var(--md-on-surface-variant);font-style:italic">configure the join above...</span>
         </div>
-      </div>
-      <div id="join-impact" style="margin-top:8px;padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm);font-size:11px;color:var(--md-on-surface-variant)">
-        Choose a table and at least one key to preview the impact.
       </div>
     </div>
 
@@ -83,6 +100,7 @@ const TVJOIN = (() => {
   let joinType = 'inner';
   let keyRows = [];
   let previewSeq = 0;
+  let latestPreview = null;
 
   function init(nextCols, nextColOpts) {
     cols = nextCols;
@@ -90,6 +108,46 @@ const TVJOIN = (() => {
     joinType = 'inner';
     keyRows = [];
     previewSeq = 0;
+    latestPreview = null;
+  }
+
+  function joinTypeWarning(type) {
+    const messages = {
+      inner: 'Only rows with matching keys in both tables will remain. Unmatched rows from the current table will be dropped.',
+      left: 'All rows from the current table stay. Matching columns are added from the other table. Duplicate keys on the right can expand rows.',
+      right: 'Rows will follow the right-hand table. Unmatched rows from the current table can disappear.',
+      full: 'Rows from either table can appear. Unmatched keys can create missing values in the result.',
+      semi: 'Only current rows with a match in the other table will remain.',
+      anti: 'Only current rows without a match in the other table will remain.',
+    };
+    return messages[type] || '';
+  }
+
+  function joinTypeFriendlyLabel(type) {
+    const messages = {
+      inner: 'keep only rows that match in both tables',
+      left: 'keep every row from the current table',
+      right: 'follow the rows from the other table',
+      full: 'keep rows from either table',
+      semi: 'keep current rows that have a match',
+      anti: 'keep current rows that do not have a match',
+    };
+    return messages[type] || 'match rows between both tables';
+  }
+
+  function previewWarningText(res) {
+    const beforeRows = Number(res?.before_nrow || 0);
+    const afterRows = Number(res?.after_nrow || 0);
+    const warnings = [joinTypeWarning(joinType)];
+    if (afterRows > beforeRows) {
+      warnings.push('Preview shows row expansion, which usually means the join keys are duplicated in the other table.');
+    } else if (afterRows < beforeRows && ['inner', 'right', 'semi', 'anti'].includes(joinType)) {
+      warnings.push('Preview shows fewer rows than the current table, so some rows will be excluded.');
+    }
+    if (joinType === 'full' && afterRows > beforeRows) {
+      warnings.push('New rows may come from keys that only exist in the other table.');
+    }
+    return warnings.join(' ');
   }
 
   function setType(nextType) {
@@ -97,6 +155,8 @@ const TVJOIN = (() => {
     ['inner', 'left', 'right', 'full', 'semi', 'anti'].forEach(jt => {
       document.getElementById('jt-' + jt)?.classList.toggle('selected', jt === nextType);
     });
+    const help = document.getElementById('join-type-help');
+    if (help) help.textContent = joinTypeWarning(nextType);
     updatePreview();
   }
 
@@ -157,6 +217,9 @@ const TVJOIN = (() => {
   function updatePreview() {
     const prev = document.getElementById('join-preview');
     const impact = document.getElementById('join-impact');
+    const warning = document.getElementById('join-warning');
+    const targetSummary = document.getElementById('join-target-summary');
+    const friendlySummary = document.getElementById('join-friendly-summary');
     if (!prev) return;
     const code = buildCode();
     const right = document.getElementById('join-right')?.value || '';
@@ -165,19 +228,34 @@ const TVJOIN = (() => {
     else prev.innerHTML = `<span style="color:var(--md-on-surface-variant);font-style:italic">add at least one key column...</span>`;
     if (!impact) return;
     if (!right || !keys.length) {
-      impact.textContent = 'Choose a table and at least one key to preview the impact.';
+      if (targetSummary) targetSummary.textContent = 'Result: choose another table and at least one matching column.';
+      if (friendlySummary) friendlySummary.textContent = 'Choose how rows should match and tidyview will explain the result here.';
+      impact.textContent = 'Choose a table and at least one matching column to preview the impact.';
+      if (warning) warning.textContent = 'Join warnings will appear here once you choose a table and matching columns.';
+      latestPreview = null;
       return;
+    }
+    if (targetSummary) {
+      targetSummary.textContent = `Result: join "${TV.state.name || 'current table'}" with "${right}" using ${keys.join(', ')}.`;
+    }
+    if (friendlySummary) {
+      friendlySummary.textContent = `This will ${joinTypeFriendlyLabel(joinType)} by matching ${keys.join(', ')} between "${TV.state.name || 'current table'}" and "${right}".`;
     }
     const seq = ++previewSeq;
     impact.textContent = 'Previewing impact...';
+    if (warning) warning.textContent = joinTypeWarning(joinType);
     TV.api('preview_op', { op: 'join', params: { right_name: right, by: keys, type: joinType } })
       .then(res => {
         if (seq !== previewSeq) return;
+        latestPreview = res;
         impact.textContent = TV.formatImpactSummary(res, 'join');
+        if (warning) warning.textContent = previewWarningText(res);
       })
       .catch(e => {
         if (seq !== previewSeq) return;
+        latestPreview = null;
         impact.textContent = e.message;
+        if (warning) warning.textContent = joinTypeWarning(joinType);
       });
   }
 
@@ -187,6 +265,18 @@ const TVJOIN = (() => {
     if (!byCols.length || !right) {
       await TV.showMessage('Choose a table and at least one key.', { title: 'Join Incomplete' });
       return;
+    }
+    const preview = latestPreview;
+    const beforeRows = Number(preview?.before_nrow || 0);
+    const afterRows = Number(preview?.after_nrow || 0);
+    if (preview && afterRows !== beforeRows) {
+      const ok = await TV.confirmMessage(
+        afterRows > beforeRows
+          ? `This join expands the current table from ${beforeRows.toLocaleString()} to ${afterRows.toLocaleString()} rows. Continue?`
+          : `This join reduces the current table from ${beforeRows.toLocaleString()} to ${afterRows.toLocaleString()} rows. Continue?`,
+        { title: 'Review Join Impact', confirmLabel: 'apply' }
+      );
+      if (!ok) return;
     }
     const btn = document.getElementById('join-apply-btn');
     if (btn) {

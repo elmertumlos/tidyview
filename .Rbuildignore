@@ -6,6 +6,7 @@
 ^\.Rproj\.user$
 ^\.claude$
 ^\.tidyview-cache$
+^notes$
 ^.*\.Rcheck$
 ^.*\.tar\.gz$
 ^\.tmp

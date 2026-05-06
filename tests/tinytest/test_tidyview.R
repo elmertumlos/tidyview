@@ -3,14 +3,27 @@ library(data.table)
 
 test_file <- if (!is.null(sys.frame(1)$ofile)) sys.frame(1)$ofile else
   file.path("tests", "tinytest", "test_tidyview.R")
-pkg_root <- normalizePath(file.path(dirname(test_file), "..", ".."), mustWork = TRUE)
+check_mode <- identical(Sys.getenv("_R_CHECK_PACKAGE_NAME_"), "tidyview") ||
+  grepl("\\.Rcheck([/\\\\]|$)", normalizePath(getwd(), winslash = "/", mustWork = FALSE))
+root_candidates <- unique(normalizePath(c(
+  file.path(dirname(test_file), "..", ".."),
+  file.path(dirname(test_file), "..", "..", "tidyview"),
+  file.path(dirname(test_file), "..", "tidyview")
+), winslash = "/", mustWork = FALSE))
+pkg_root <- root_candidates[file.exists(file.path(root_candidates, "R", "m3_theme.R"))][1]
 
-source(file.path(pkg_root, "R", "m3_theme.R"), local = TRUE)
-source(file.path(pkg_root, "R", "codegen.R"), local = TRUE)
-source(file.path(pkg_root, "R", "integrations.R"), local = TRUE)
-source(file.path(pkg_root, "R", "api_handlers.R"), local = TRUE)
-source(file.path(pkg_root, "R", "load.R"), local = TRUE)
-source(file.path(pkg_root, "R", "verbs.R"), local = TRUE)
+if (!check_mode && !is.na(pkg_root) && nzchar(pkg_root)) {
+  source(file.path(pkg_root, "R", "m3_theme.R"), local = TRUE)
+  source(file.path(pkg_root, "R", "codegen.R"), local = TRUE)
+  source(file.path(pkg_root, "R", "integrations.R"), local = TRUE)
+  source(file.path(pkg_root, "R", "api_handlers.R"), local = TRUE)
+  source(file.path(pkg_root, "R", "load.R"), local = TRUE)
+  source(file.path(pkg_root, "R", "tidygui.R"), local = TRUE)
+  source(file.path(pkg_root, "R", "verbs.R"), local = TRUE)
+} else {
+  ns <- asNamespace("tidyview")
+  list2env(as.list.environment(ns, all.names = TRUE), envir = environment())
+}
 
 # ── m3_theme() ──────────────────────────────────────────────────────────────
 
@@ -89,6 +102,21 @@ state3$history <- character(0)
 expect_true("tax" %in% names(state3$dt))
 expect_equal(state3$dt$tax, c(12, 24, 36))
 
+state3_list <- new.env(parent = emptyenv())
+state3_list$dt <- data.table::data.table(
+  height = c(172L, 167L),
+  films = list(c("A New Hope", "The Empire Strikes Back"), "A New Hope")
+)
+state3_list$name <- "star"
+state3_list$history <- character(0)
+state3_list$undo_stack <- list()
+
+res3_list <- .op_mutate(list(col_name = "height_in", expr = "round(height / 2.54, 1)"), state3_list)
+expect_true("height_in" %in% names(state3_list$dt))
+expect_equal(state3_list$dt$height_in, c(67.7, 65.7))
+expect_equal(res3_list$ncol, 3L)
+expect_equal(res3_list$columns[[2]]$type, "list")
+
 state_filter_expr <- new.env(parent = emptyenv())
 state_filter_expr$dt <- data.table::data.table(a = c(1L, 2L, 3L), b = c(0L, 5L, 1L))
 state_filter_expr$name <- "DT"
@@ -97,6 +125,37 @@ state_filter_expr$undo_stack <- list()
 
 .op_filter(list(expr = "rowSums(cbind(a > 1L, b > 3L), na.rm = TRUE) > 0"), state_filter_expr)
 expect_equal(state_filter_expr$dt$a, c(2L, 3L))
+
+state_recode_partial <- new.env(parent = emptyenv())
+state_recode_partial$dt <- data.table::data.table(status = c("Open", "Closed", "Pending", NA_character_))
+state_recode_partial$name <- "DT"
+state_recode_partial$history <- character(0)
+state_recode_partial$undo_stack <- list()
+
+.op_recode(list(
+  col = "status",
+  mapping = list(list(from = "Open", to = "Active")),
+  as_factor = FALSE
+), state_recode_partial)
+expect_equal(state_recode_partial$dt$status, c("Active", "Closed", "Pending", NA))
+
+state_recode_factor <- new.env(parent = emptyenv())
+state_recode_factor$dt <- data.table::data.table(stage = c("Infant", "Toddler", "Child", NA_character_))
+state_recode_factor$name <- "DT"
+state_recode_factor$history <- character(0)
+state_recode_factor$undo_stack <- list()
+
+.op_recode(list(
+  col = "stage",
+  mapping = list(
+    list(from = "Infant", to = "Child"),
+    list(from = "Toddler", to = "Child")
+  ),
+  as_factor = TRUE
+), state_recode_factor)
+expect_true(is.factor(state_recode_factor$dt$stage))
+expect_equal(as.character(state_recode_factor$dt$stage), c("Child", "Child", "Child", NA))
+expect_equal(levels(state_recode_factor$dt$stage), "Child")
 
 # ── .op_summarise() ─────────────────────────────────────────────────────────
 
@@ -235,6 +294,20 @@ state_drop$undo_stack <- list()
 .op_drop_na(list(columns = "a"), state_drop)
 expect_equal(nrow(state_drop$dt), 2L)
 
+state_drop_list <- new.env(parent = emptyenv())
+state_drop_list$dt <- data.table::data.table(
+  a = c(1, NA, 3),
+  films = list(c("A New Hope", "The Empire Strikes Back"), "A New Hope", "Return of the Jedi")
+)
+state_drop_list$name <- "star"
+state_drop_list$history <- character(0)
+state_drop_list$undo_stack <- list()
+
+res_drop_list <- .op_drop_na(list(columns = character(0)), state_drop_list)
+expect_equal(nrow(state_drop_list$dt), 2L)
+expect_equal(names(state_drop_list$dt), c("a", "films"))
+expect_true(grepl("\\.\\.tv_missing_cell", res_drop_list$code))
+
 state_sep <- new.env(parent = emptyenv())
 state_sep$dt <- data.table::data.table(code = c("01-001", "02-003"))
 state_sep$name <- "DT"
@@ -315,6 +388,8 @@ load_state$dt <- NULL
 load_state$name <- NULL
 load_state$history <- character(0)
 load_state$undo_stack <- list()
+load_state$sessions <- list()
+load_state$active_idx <- 0L
 
 load_res <- .api_load_file(list(file_name = "upload.csv", contents = b64_csv, as = "upload"), load_state)
 expect_true(load_res$ok)
@@ -682,6 +757,30 @@ list_preview <- .dt_preview(list_col_dt, n = 2)
 expect_equal(list_preview[[1]]$tags, "alpha, beta")
 expect_equal(list_preview[[2]]$tags, "")
 
+port_probe <- sample(22000:28000, 1)
+busy_server <- httpuv::startServer(
+  "127.0.0.1",
+  port_probe,
+  list(call = function(req) {
+    list(status = 200L, headers = list("Content-Type" = "text/plain"), body = "ok")
+  })
+)
+on.exit({
+  if (exists("fallback_server")) try(httpuv::stopServer(fallback_server$server), silent = TRUE)
+  if (exists("busy_server")) try(httpuv::stopServer(busy_server), silent = TRUE)
+}, add = TRUE)
+fallback_server <- .start_tidyview_server(
+  list(call = function(req) {
+    list(status = 200L, headers = list("Content-Type" = "text/plain"), body = "ok")
+  }),
+  port = port_probe,
+  max_tries = 5L
+)
+expect_true(fallback_server$port != port_probe)
+expect_true(fallback_server$port > port_probe)
+httpuv::stopServer(fallback_server$server)
+httpuv::stopServer(busy_server)
+
 if (!requireNamespace("tsg", quietly = TRUE)) {
   expect_error(
     tv_generate_frequency(data.table::data.table(x = c("a", "b")), "x"),
@@ -700,7 +799,64 @@ if (!requireNamespace("phscs", quietly = TRUE)) {
   )
 }
 
-if (!requireNamespace("rcdf", quietly = TRUE)) {
+if (requireNamespace("rcdf", quietly = TRUE)) {
+  rcdf_dir <- system.file("extdata", package = "rcdf")
+  rcdf_path <- file.path(rcdf_dir, "mtcars.rcdf")
+  rcdf_key <- file.path(rcdf_dir, "sample-private-key-pw.pem")
+
+  rcdf_tbl <- tv_read_rcdf(
+    path = rcdf_path,
+    decryption_key = rcdf_key,
+    password = "1234",
+    return_meta = TRUE,
+    table = "data"
+  )
+  expect_true(inherits(rcdf_tbl, "data.table"))
+  expect_true(!is.null(attr(rcdf_tbl, "metadata")))
+  expect_true(grepl("return_meta = TRUE", attr(rcdf_tbl, "tv_code"), fixed = TRUE))
+
+  rcdf_loaded <- tv_fread(
+    path = rcdf_path,
+    as = "cars",
+    table = "data",
+    decryption_key = rcdf_key,
+    password = "1234",
+    return_meta = TRUE
+  )
+  expect_true(!is.null(attr(rcdf_loaded, "metadata")))
+  expect_true(grepl("return_meta = TRUE", attr(rcdf_loaded, "tv_code"), fixed = TRUE))
+
+  rcdf_inspect <- .inspect_rcdf_tables(
+    file_path = rcdf_path,
+    key_path = rcdf_key,
+    password = "1234",
+    return_meta = TRUE
+  )
+  rcdf_table_names <- vapply(rcdf_inspect$tables, function(x) x$name, character(1))
+  expect_true("__data_dictionary" %in% rcdf_table_names)
+
+  rcdf_state <- new.env(parent = emptyenv())
+  rcdf_state$dt <- NULL
+  rcdf_state$name <- NULL
+  rcdf_state$history <- character(0)
+  rcdf_state$undo_stack <- list()
+  rcdf_state$sessions <- list()
+  rcdf_state$active_idx <- 0L
+  rcdf_res <- .load_rcdf_tables_into_state(
+    state = rcdf_state,
+    file_path = rcdf_path,
+    file_code_path = rcdf_path,
+    key_path = rcdf_key,
+    password = "1234",
+    return_meta = TRUE,
+    object_name = "cars_rcdf",
+    selected_tables = "data",
+    as_name = "cars"
+  )
+  expect_true(rcdf_res$ok)
+  expect_true(!is.null(attr(rcdf_state$dt, "metadata")))
+  expect_true(any(grepl("return_meta = TRUE", rcdf_state$history, fixed = TRUE)))
+} else {
   expect_error(
     tv_read_rcdf("example.rcdf", decryption_key = "example.pem"),
     "Package 'rcdf'"

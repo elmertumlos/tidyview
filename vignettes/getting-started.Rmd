@@ -13,13 +13,18 @@ knitr::opts_chunk$set(eval = FALSE)
 
 ## What is tidyview?
 
-`tidyview` is a codeless data workflow GUI with a tidyverse-style interface
+`tidyview` is a guided data workflow GUI with a tidyverse-style interface
 and a `data.table` backend. It opens a Material Design 3 browser interface
-that lets anyone with a logical mind inspect, clean, validate, compare,
-tabulate, and export data without writing each step by hand.
+that lets users inspect, clean, validate, compare, tabulate, and export
+data without writing each step by hand.
 
 Every click generates a valid `data.table` expression shown live in the **code
 pane**. The more you use it, the more R you learn by watching.
+
+Version `0.2.0` focuses on making the highest-use panels easier to understand
+for non-technical users. Common tasks now use clearer labels, plain-English
+summaries, and safer previews before destructive actions such as recode,
+join, and `drop_na`.
 
 ## Installation
 
@@ -32,6 +37,9 @@ install.packages(c("data.table", "httpuv", "jsonlite", "htmltools"))
 
 # optional file-format support
 install.packages(c("readxl", "haven", "writexl"))
+
+# optional RCDF import support
+install.packages("rcdf")
 ```
 
 ## Quick start
@@ -48,6 +56,19 @@ tidygui(data.table::fread("sales.csv"), name = "sales")
 # open the import dialog (choose data interactively)
 tidygui()
 ```
+
+By default, `tidygui()` starts a local browser app at
+`http://127.0.0.1:7474`.
+
+`rcdf` is optional. `tidyview` itself runs without it, and you only need it
+when you want to open RCDF files. In the current tidyview workflow, RCDF
+import is documented around a decryption key file path, typically a PEM
+private-key file with an optional password.
+
+The RCDF import panel also includes an **include RCDF metadata** option. When
+enabled, tidyview reads the file with `return_meta = TRUE`, keeps the returned
+metadata on imported tables, and lets you open any tabular RCDF dictionary
+output as its own tab.
 
 ## The GUI at a glance
 
@@ -75,7 +96,15 @@ paste-ready `data.table` expression.
 ### Mutate columns - `DT[, new := expr]`
 
 Use **mutate** to create derived columns with typed expressions and helper
-builders for common string, date, and conditional operations.
+builders for common string, date, conditional, and unit-conversion
+operations.
+
+For example, in `dplyr::starwars`, you can create `height_in` from `height`
+with:
+
+```r
+star[, height_in := round(height / 2.54, 1)]
+```
 
 ### RegEx workflows
 
@@ -107,6 +136,20 @@ quality issues before export:
 - inspect grouped missing-data patterns
 - define validation rules
 - compare one dataset against another
+
+These panels are especially useful before applying destructive changes,
+because they make it easier to inspect missingness, duplication, and join
+behavior ahead of time.
+
+## Working with list-column data
+
+`tidyview 0.2.0` is more stable on datasets that contain list-columns, such
+as `dplyr::starwars`.
+
+- `mutate` can add new columns without breaking the table refresh
+- `drop_na` now previews and applies correctly even when the table contains
+  list-columns
+- the grid keeps list-column type badges and compact list previews visible
 
 ## Programmatic helpers
 

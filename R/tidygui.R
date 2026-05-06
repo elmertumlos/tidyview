@@ -1,9 +1,12 @@
 #' Launch the tidyview GUI
 #'
-#' Opens a Material Design 3 browser-based GUI for codeless data tabulation.
+#' Opens a Material Design 3 browser-based GUI for guided data workflows.
 #' Every interaction generates valid data.table R code shown live in the
-#' code pane. Supports loading data from the R environment or from files,
-#' including RCDF datasets when the optional `rcdf` package is installed.
+#' code pane. The interface is designed to be teachable and safe for
+#' non-technical users, with plain-language labels, guided builders, and
+#' impact previews before destructive actions. Supports loading data from
+#' the R environment or from files, including RCDF datasets when the
+#' optional `rcdf` package is installed.
 #'
 #' @param data Optional. A data frame or data.table to open immediately.
 #'   If NULL, the import dialog is shown first.
@@ -11,7 +14,9 @@
 #'   Defaults to "DT".
 #' @param theme A theme object from [m3_theme()]. Defaults to the tidyview
 #'   purple seed theme.
-#' @param port Integer. Local port for the GUI server. Default 7474.
+#' @param port Integer. Preferred local port for the GUI server. Default 7474.
+#'   If that port is already in use, tidyview will try nearby ports
+#'   automatically.
 #' @param launch.browser Logical. Open the browser automatically. Default TRUE.
 #' @param quiet Logical. Suppress startup messages. Default FALSE.
 #'
@@ -72,18 +77,16 @@ tidygui <- function(data     = NULL,
 
   app <- .build_app(state, app_dir, tmpl_dir)
 
-  srv <- tryCatch(
-    httpuv::startServer("127.0.0.1", port, app),
-    error = function(e) {
-      stop("Could not start tidyview on port ", port,
-           ". A previous server may still be running. ",
-           "Restart your R session to free the port.", call. = FALSE)
-    }
-  )
+  started <- .start_tidyview_server(app, port = port)
+  srv <- started$server
+  actual_port <- started$port
 
-  url <- paste0("http://127.0.0.1:", port)
+  url <- paste0("http://127.0.0.1:", actual_port)
   if (!quiet) {
     message("tidyview running at ", url)
+    if (!identical(actual_port, as.integer(port))) {
+      message("Requested port ", as.integer(port), " was busy, so tidyview used port ", actual_port, ".")
+    }
     message("Stop with stop_tidygui() or close the browser tab.")
     if (!is.null(startup_notice)) message(startup_notice)
   }
@@ -107,6 +110,54 @@ stop_tidygui <- function() {
     message("No tidyview server is running.")
   }
   invisible(NULL)
+}
+
+
+.start_tidyview_server <- function(app, port = 7474L, host = "127.0.0.1", max_tries = 25L) {
+  port <- as.integer(port)
+  max_tries <- max(1L, as.integer(max_tries))
+  attempted <- integer(0)
+
+  for (candidate in seq.int(port, length.out = max_tries)) {
+    attempted <- c(attempted, candidate)
+    if (!.port_is_available(candidate)) next
+
+    started <- tryCatch(
+      list(server = httpuv::startServer(host, candidate, app), port = candidate),
+      error = function(e) e
+    )
+
+    if (!inherits(started, "error")) return(started)
+
+    if (!.port_in_use_error(started) && .port_is_available(candidate)) {
+      stop(
+        "Could not start tidyview on port ", candidate, ": ",
+        conditionMessage(started),
+        call. = FALSE
+      )
+    }
+  }
+
+  stop(
+    "Could not start tidyview. Tried ports ",
+    paste(attempted, collapse = ", "),
+    ". Another tidyview server or helper process may still be running.",
+    call. = FALSE
+  )
+}
+
+
+.port_is_available <- function(port) {
+  sock <- tryCatch(serverSocket(as.integer(port)), error = function(e) NULL)
+  if (is.null(sock)) return(FALSE)
+  close(sock)
+  TRUE
+}
+
+
+.port_in_use_error <- function(err) {
+  msg <- tolower(trimws(conditionMessage(err)))
+  grepl("address already in use|cannot assign requested address|only one usage of each socket address", msg)
 }
 
 
@@ -370,8 +421,8 @@ stop_tidygui <- function() {
       name    = nm,
       label   = if (!is.null(lbl)) as.character(lbl) else NULL,
       type    = type,
-      n_unique = data.table::uniqueN(col),
-      n_na    = sum(is.na(col)),
+      n_unique = .column_unique_n(col),
+      n_na    = .column_na_n(col),
       sample  = as.list(.col_sample(col))  # always JSON array, never auto-unboxed scalar
     )
   })
@@ -410,6 +461,7 @@ stop_tidygui <- function() {
   if (inherits(x, "POSIXct"))   return("POSIXct")
   if (inherits(x, "Date"))      return("Date")
   if (inherits(x, "factor"))    return("factor")
+  if (is.list(x))               return("list")
   switch(typeof(x),
     integer   = "int",
     double    = "dbl",
@@ -448,6 +500,7 @@ stop_tidygui <- function() {
     return(as.POSIXct(x, tz = tz[[1]]))
   }
   if (inherits(x, "Date") || inherits(x, "IDate") || inherits(x, "ITime")) return(x)
+  if (is.list(x)) return(x)
   if (is.atomic(x)) return(unname(x))
   as.vector(x)
 }
@@ -469,7 +522,40 @@ stop_tidygui <- function() {
 }
 
 
+.list_cell_display <- function(cell) {
+  if (is.null(cell) || length(cell) == 0L) return("")
+  if (length(cell) == 1L && is.na(cell)) return(NA_character_)
+  vals <- vapply(as.list(cell), .scalar_display, character(1))
+  if (!length(vals)) return("")
+  if (all(is.na(vals))) return(NA_character_)
+  paste(vals, collapse = ", ")
+}
+
+
+.column_unique_n <- function(col) {
+  if (is.list(col)) {
+    return(data.table::uniqueN(vapply(col, .list_cell_display, character(1))))
+  }
+  data.table::uniqueN(col)
+}
+
+
+.column_na_n <- function(col) {
+  if (is.list(col)) {
+    return(sum(vapply(col, function(cell) {
+      length(cell) == 1L && is.na(cell)
+    }, logical(1))))
+  }
+  sum(is.na(col))
+}
+
+
 .col_sample <- function(x, n = 3) {
+  if (is.list(x)) {
+    vals <- unique(vapply(x, .list_cell_display, character(1)))
+    vals <- vals[!is.na(vals)]
+    return(head(vals, n))
+  }
   plain <- .plain_vector(x)
   vals <- unique(plain[!is.na(plain)])
   vals <- head(vals, n)

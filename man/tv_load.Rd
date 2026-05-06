@@ -12,6 +12,7 @@ tv_fread(
   table = NULL,
   decryption_key = NULL,
   password = NULL,
+  return_meta = FALSE,
   ...
 )
 
@@ -26,9 +27,13 @@ tv_load(path, as = "DT", ...)
 
 \item{table}{Optional table name to extract from an RCDF file.}
 
-\item{decryption_key}{Optional private-key path for RCDF files.}
+\item{decryption_key}{Optional decryption-key path for RCDF files. In the
+current tidyview workflow, this is typically the path to a PEM private-key
+file.}
 
-\item{password}{Optional private-key password for RCDF files.}
+\item{password}{Optional password for the RCDF private-key file.}
+
+\item{return_meta}{If \code{TRUE}, include RCDF metadata in the returned object.}
 
 \item{...}{Additional arguments forwarded to the underlying reader.}
 

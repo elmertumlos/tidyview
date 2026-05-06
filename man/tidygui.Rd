@@ -23,7 +23,9 @@ Defaults to "DT".}
 \item{theme}{A theme object from \code{\link[=m3_theme]{m3_theme()}}. Defaults to the tidyview
 purple seed theme.}
 
-\item{port}{Integer. Local port for the GUI server. Default 7474.}
+\item{port}{Integer. Preferred local port for the GUI server. Default 7474.
+If that port is already in use, tidyview will try nearby ports
+automatically.}
 
 \item{launch.browser}{Logical. Open the browser automatically. Default TRUE.}
 
@@ -34,10 +36,13 @@ Invisibly returns the httpuv server handle. Call
 \code{\link[=stop_tidygui]{stop_tidygui()}} to shut it down programmatically.
 }
 \description{
-Opens a Material Design 3 browser-based GUI for codeless data tabulation.
+Opens a Material Design 3 browser-based GUI for guided data workflows.
 Every interaction generates valid data.table R code shown live in the
-code pane. Supports loading data from the R environment or from files,
-including RCDF datasets when the optional \code{rcdf} package is installed.
+code pane. The interface is designed to be teachable and safe for
+non-technical users, with plain-language labels, guided builders, and
+impact previews before destructive actions. Supports loading data from
+the R environment or from files, including RCDF datasets when the optional
+\code{rcdf} package is installed.
 }
 \examples{
 \dontrun{

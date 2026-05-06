@@ -8,6 +8,7 @@ tv_read_rcdf(
   path,
   decryption_key,
   password = NULL,
+  return_meta = FALSE,
   table = NULL,
   as = "rcdf_data"
 )
@@ -15,9 +16,13 @@ tv_read_rcdf(
 \arguments{
 \item{path}{Path to an \code{.rcdf} file.}
 
-\item{decryption_key}{Path to the private key used to decrypt the RCDF file.}
+\item{decryption_key}{Path to the decryption key used to open the RCDF file.
+In the current tidyview workflow, this is typically a PEM private-key
+file path.}
 
-\item{password}{Optional password for the private key.}
+\item{password}{Optional password for the private-key file.}
+
+\item{return_meta}{If \code{TRUE}, include RCDF metadata in the returned object.}
 
 \item{table}{Optional table name to extract from the RCDF object.}
 
@@ -25,4 +30,8 @@ tv_read_rcdf(
 }
 \description{
 Read an RCDF file
+}
+\details{
+This helper requires the optional \code{rcdf} package. \code{tidyview} itself can
+run without \code{rcdf} installed; only RCDF import needs it.
 }

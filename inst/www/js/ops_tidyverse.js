@@ -166,44 +166,90 @@ TV.panels.drop_na = function(pane) {
           <path d="M13 12l3 3M16 12l-3 3" stroke-linecap="round"/>
         </svg>
       </div>
-      <div><div class="tv-panel-title">drop_na</div><div class="tv-panel-sub">remove rows with missing values</div></div>
-      <button class="tv-panel-close" onclick="TV.closePanel()">x</button>
-    </div>
-    <div class="tv-panel-body">
-      <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:14px;line-height:1.6">
-        Leave the selection empty to drop rows with missing values anywhere in the table.
+        <div><div class="tv-panel-title">drop_na</div><div class="tv-panel-sub">remove rows that contain missing values</div></div>
+        <button class="tv-panel-close" onclick="TV.closePanel()">x</button>
       </div>
-      <div class="tv-field">
-        <label class="tv-field-label">check missing values in</label>
-        <div id="dropna-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:28px"></div>
-        <select class="tv-select" id="dropna-add" onchange="TVDROPNA.addCol(this.value);this.value=''">
-          <option value="">add column...</option>${options}
-        </select>
+      <div class="tv-panel-body">
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:14px;line-height:1.6">
+          Leave the selection empty to check every column in the table, or choose specific columns if only some fields should be required.
+        </div>
+        <div class="tv-field">
+          <label class="tv-field-label">which columns should be checked?</label>
+          <div id="dropna-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:28px"></div>
+          <select class="tv-select" id="dropna-add" onchange="TVDROPNA.addCol(this.value);this.value=''">
+            <option value="">add column...</option>${options}
+          </select>
+        </div>
+        <div style="padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm);background:var(--md-surface-variant)">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:5px;font-weight:500">What This Will Do</div>
+          <div id="dropna-target-summary" style="font-size:12px;color:var(--md-on-surface);margin-bottom:6px">Result: rows with missing values in the checked columns will be removed.</div>
+          <div id="dropna-friendly-summary" style="font-size:11px;color:var(--md-on-surface);line-height:1.6;margin-bottom:10px">Choose whether to check the whole table or only specific columns.</div>
+          <div id="dropna-impact" style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px">
+            Previewing impact...
+          </div>
+          <div id="dropna-warning" style="font-size:11px;color:var(--md-on-surface-variant);line-height:1.6;margin-bottom:10px">
+            Rows with missing values in the checked columns will be removed from the current table.
+          </div>
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:5px;font-weight:500">Generated R</div>
+          <div id="dropna-preview" style="font:var(--tv-type-mono);font-size:11px;line-height:1.7;color:var(--md-on-surface);white-space:pre-wrap"></div>
+        </div>
       </div>
-      <div style="padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm)">
-        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:5px;font-weight:500">generated R</div>
-        <div id="dropna-preview" style="font:var(--tv-type-mono);font-size:11px;line-height:1.7;color:var(--md-on-surface);white-space:pre-wrap"></div>
-      </div>
-      <div id="dropna-impact" style="margin-top:8px;padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm);font-size:11px;color:var(--md-on-surface-variant)">
-        Previewing impact...
-      </div>
-    </div>
-    <div class="tv-panel-footer">
-      <button class="tv-btn-outlined" onclick="TV.closePanel()">cancel</button>
-      <button class="tv-btn-filled" id="dropna-apply-btn">apply -></button>
-    </div>`;
+      <div class="tv-panel-footer">
+        <button class="tv-btn-outlined" onclick="TV.closePanel()">cancel</button>
+        <button class="tv-btn-filled" id="dropna-apply-btn">apply changes -></button>
+      </div>`;
 
   document.getElementById('dropna-apply-btn').addEventListener('click', TVDROPNA.apply);
   TVDROPNA.init();
 };
 
-const TVDROPNA = (() => {
-  let cols = [];
-  let previewSeq = 0;
+  const TVDROPNA = (() => {
+    let cols = [];
+    let previewSeq = 0;
+    let latestPreview = null;
 
-  function init() {
-    cols = [];
-    previewSeq = 0;
+    function activeColumnMeta() {
+      return Array.isArray(window.__TV_COLS__) ? window.__TV_COLS__ : [];
+    }
+
+    function checkColumns() {
+      return cols.length ? cols.slice() : activeColumnMeta().map(col => col.name);
+    }
+
+    function needsListSafeDropNa() {
+      const wanted = new Set(checkColumns());
+      return activeColumnMeta().some(col => wanted.has(col.name) && col.type === 'list');
+    }
+
+    function buildDropNaPreviewCode(name) {
+      if (!needsListSafeDropNa()) {
+        return cols.length
+          ? `${name} <- ${name}[stats::complete.cases(${name}[, .(${cols.map(TV.rName).join(', ')})])]`
+          : `${name} <- ${name}[stats::complete.cases(${name})]`;
+      }
+      const checkCols = checkColumns();
+      return [
+        `..tv_missing_cell <- function(cell) {`,
+        `  if (is.null(cell) || length(cell) == 0L) return(TRUE)`,
+        `  if (is.list(cell)) {`,
+        `    if (!length(cell)) return(TRUE)`,
+        `    return(all(vapply(cell, ..tv_missing_cell, logical(1))))`,
+        `  }`,
+        `  all(is.na(cell))`,
+        `}`,
+        `..tv_cols <- c(${checkCols.map(TV.rString).join(', ')})`,
+        `..tv_keep <- vapply(seq_len(nrow(${name})), function(i) {`,
+        `  all(vapply(..tv_cols, function(col) !..tv_missing_cell(${name}[[col]][[i]]), logical(1)))`,
+        `}, logical(1))`,
+        `${name} <- ${name}[..tv_keep]`,
+        `rm(..tv_cols, ..tv_keep, ..tv_missing_cell)`,
+      ].join('\n');
+    }
+
+    function init() {
+      cols = [];
+      previewSeq = 0;
+      latestPreview = null;
     renderChips();
     updatePreview();
   }
@@ -230,29 +276,69 @@ const TVDROPNA = (() => {
       </button>`).join('');
   }
 
-  function updatePreview() {
-    const prev = document.getElementById('dropna-preview');
-    const impact = document.getElementById('dropna-impact');
-    if (!prev) return;
-    const name = TV.rName(TV.state.name || 'DT');
-    prev.textContent = cols.length
-      ? `${name} <- ${name}[stats::complete.cases(${name}[, .(${cols.map(TV.rName).join(', ')})])]`
-      : `${name} <- ${name}[stats::complete.cases(${name})]`;
+    function updatePreview() {
+      const prev = document.getElementById('dropna-preview');
+      const impact = document.getElementById('dropna-impact');
+      const warning = document.getElementById('dropna-warning');
+      const targetSummary = document.getElementById('dropna-target-summary');
+      const friendlySummary = document.getElementById('dropna-friendly-summary');
+      if (!prev) return;
+      const name = TV.rName(TV.state.name || 'DT');
+      prev.textContent = buildDropNaPreviewCode(name);
+      if (targetSummary) {
+        targetSummary.textContent = cols.length
+          ? `Result: remove rows with missing values in ${cols.join(', ')}.`
+          : 'Result: remove rows with missing values anywhere in the table.';
+      }
+      if (friendlySummary) {
+        friendlySummary.textContent = cols.length
+          ? `Only ${cols.join(', ')} will be checked. Rows stay if those selected columns are filled in, even when other columns still contain missing values.`
+          : 'Every column in the table will be checked. A row stays only if the whole row is complete.';
+      }
+      if (warning) {
+        warning.textContent = cols.length
+          ? `Only the selected columns are checked for missing values: ${cols.join(', ')}.`
+          : 'Every column in the table will be checked for missing values.';
+    }
     if (!impact) return;
     const seq = ++previewSeq;
     impact.textContent = 'Previewing impact...';
     TV.api('preview_op', { op: 'drop_na', params: { columns: cols } })
       .then(res => {
         if (seq !== previewSeq) return;
+        latestPreview = res;
         impact.textContent = TV.formatImpactSummary(res, 'drop_na');
+          if (warning) {
+            const beforeRows = Number(res?.before_nrow || 0);
+            const afterRows = Number(res?.after_nrow || 0);
+            const removedRows = Math.max(0, beforeRows - afterRows);
+            const scopeText = cols.length
+            ? `Only the selected columns are checked: ${cols.join(', ')}.`
+            : 'Every column in the table is checked.';
+          warning.textContent = removedRows > 0
+            ? `${scopeText} ${removedRows.toLocaleString()} row${removedRows === 1 ? '' : 's'} would be removed.`
+            : `${scopeText} No rows would be removed.`;
+        }
       })
       .catch(e => {
         if (seq !== previewSeq) return;
+        latestPreview = null;
         impact.textContent = e.message;
       });
   }
 
   async function apply() {
+    const preview = latestPreview;
+    const beforeRows = Number(preview?.before_nrow || 0);
+    const afterRows = Number(preview?.after_nrow || 0);
+    const removedRows = Math.max(0, beforeRows - afterRows);
+    if (removedRows > 0) {
+      const ok = await TV.confirmMessage(
+        `This will remove ${removedRows.toLocaleString()} row${removedRows === 1 ? '' : 's'} from the current table. Continue?`,
+        { title: 'Review Drop NA Impact', confirmLabel: 'apply' }
+      );
+      if (!ok) return;
+    }
     try {
       const res = await TV.api('op_drop_na', { columns: cols });
       TV.pushCode(res.code);
@@ -284,76 +370,95 @@ TV.panels.separate = function(pane) {
           <path d="M10 7l3 3-3 3" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </div>
-      <div><div class="tv-panel-title">separate / unite</div><div class="tv-panel-sub">split one column or combine many columns</div></div>
-      <button class="tv-panel-close" onclick="TV.closePanel()">x</button>
-    </div>
-    <div class="tv-panel-body">
-      <div class="tv-field">
-        <label class="tv-field-label">mode</label>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="tv-chip selected" id="sep-mode-separate" onclick="TVSEPARATE.setMode('separate')">separate</button>
-          <button class="tv-chip" id="sep-mode-unite" onclick="TVSEPARATE.setMode('unite')">unite</button>
-        </div>
+      <div><div class="tv-panel-title">separate / unite</div><div class="tv-panel-sub">split one column into parts or combine several columns into one</div></div>
+        <button class="tv-panel-close" onclick="TV.closePanel()">x</button>
       </div>
-
-      <div id="separate-fields">
-        <div class="tv-field">
-          <label class="tv-field-label">column to split</label>
-          <select class="tv-select" id="separate-source" onchange="TVSEPARATE.updatePreview()">
-            <option value="">choose column...</option>${options}
-          </select>
+      <div class="tv-panel-body">
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:14px;line-height:1.6">
+          Use separate to break one column into smaller pieces, or unite to join several columns into one result column.
         </div>
         <div class="tv-field">
-          <label class="tv-field-label">new columns (comma-separated)</label>
-          <input class="tv-input" id="separate-into" placeholder="e.g. province, city, barangay" oninput="TVSEPARATE.updatePreview()">
+          <label class="tv-field-label">what do you want to do?</label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="tv-chip selected" id="sep-mode-separate" onclick="TVSEPARATE.setMode('separate')">split one column</button>
+            <button class="tv-chip" id="sep-mode-unite" onclick="TVSEPARATE.setMode('unite')">combine columns</button>
+          </div>
         </div>
-      </div>
 
-      <div id="unite-fields" style="display:none">
+        <div id="separate-fields">
+          <div class="tv-field">
+            <label class="tv-field-label">source column to split</label>
+            <select class="tv-select" id="separate-source" onchange="TVSEPARATE.updatePreview()">
+              <option value="">choose column...</option>${options}
+            </select>
+          </div>
+          <div class="tv-field">
+            <label class="tv-field-label">new columns to create</label>
+            <input class="tv-input" id="separate-into" placeholder="e.g. province, city, barangay" oninput="TVSEPARATE.updatePreview()">
+            <div style="font-size:11px;color:var(--md-on-surface-variant);margin-top:6px;line-height:1.5">
+              Type the new column names separated by commas, in the order the pieces should appear.
+            </div>
+          </div>
+        </div>
+
+        <div id="unite-fields" style="display:none">
+          <div class="tv-field">
+            <label class="tv-field-label">source columns to combine</label>
+            <div id="unite-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:28px"></div>
+            <select class="tv-select" id="unite-add" onchange="TVSEPARATE.addUniteCol(this.value);this.value=''">
+              <option value="">add column...</option>${options}
+            </select>
+          </div>
+          <div class="tv-field">
+            <label class="tv-field-label">result column name</label>
+            <input class="tv-input" id="unite-into" placeholder="e.g. full_name" oninput="TVSEPARATE.updatePreview()">
+          </div>
+        </div>
+
         <div class="tv-field">
-          <label class="tv-field-label">columns to combine</label>
-          <div id="unite-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:28px"></div>
-          <select class="tv-select" id="unite-add" onchange="TVSEPARATE.addUniteCol(this.value);this.value=''">
-            <option value="">add column...</option>${options}
-          </select>
+          <label class="tv-field-label">separator text</label>
+          <input class="tv-input" id="sep-delim" value="_" oninput="TVSEPARATE.updatePreview()">
+          <div style="font-size:11px;color:var(--md-on-surface-variant);margin-top:6px;line-height:1.5">
+            This is the character or text tidyview uses to split values apart or join them together.
+          </div>
         </div>
-        <div class="tv-field">
-          <label class="tv-field-label">new column name</label>
-          <input class="tv-input" id="unite-into" placeholder="e.g. full_name" oninput="TVSEPARATE.updatePreview()">
+        <div class="tv-field" style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" id="sep-remove" checked onchange="TVSEPARATE.updatePreview()">
+          <label for="sep-remove" style="font-size:12px;cursor:pointer">remove the original source column(s) after this step</label>
+        </div>
+
+        <div style="padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm);background:var(--md-surface-variant)">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:5px;font-weight:500">What This Will Do</div>
+          <div id="separate-target-summary" style="font-size:12px;color:var(--md-on-surface);margin-bottom:6px">Choose a mode and the columns you want to use.</div>
+          <div id="separate-friendly-summary" style="font-size:11px;color:var(--md-on-surface);line-height:1.6;margin-bottom:10px">tidyview will describe the split or combine step here before you apply it.</div>
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:5px;font-weight:500">Generated R</div>
+          <div id="separate-preview" style="font:var(--tv-type-mono);font-size:11px;line-height:1.7;color:var(--md-on-surface);white-space:pre-wrap"></div>
         </div>
       </div>
-
-      <div class="tv-field">
-        <label class="tv-field-label">separator</label>
-        <input class="tv-input" id="sep-delim" value="_" oninput="TVSEPARATE.updatePreview()">
-      </div>
-      <div class="tv-field" style="display:flex;align-items:center;gap:8px">
-        <input type="checkbox" id="sep-remove" checked onchange="TVSEPARATE.updatePreview()">
-        <label for="sep-remove" style="font-size:12px;cursor:pointer">remove source column(s) after operation</label>
-      </div>
-
-      <div style="padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm)">
-        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:5px;font-weight:500">generated R</div>
-        <div id="separate-preview" style="font:var(--tv-type-mono);font-size:11px;line-height:1.7;color:var(--md-on-surface);white-space:pre-wrap"></div>
-      </div>
-    </div>
-    <div class="tv-panel-footer">
-      <button class="tv-btn-outlined" onclick="TV.closePanel()">cancel</button>
-      <button class="tv-btn-filled" id="separate-apply-btn">apply -></button>
-    </div>`;
+      <div class="tv-panel-footer">
+        <button class="tv-btn-outlined" onclick="TV.closePanel()">cancel</button>
+        <button class="tv-btn-filled" id="separate-apply-btn">apply changes -></button>
+      </div>`;
 
   document.getElementById('separate-apply-btn').addEventListener('click', TVSEPARATE.apply);
   TVSEPARATE.init();
 };
 
-const TVSEPARATE = (() => {
-  let mode = 'separate';
-  let uniteCols = [];
+  const TVSEPARATE = (() => {
+    let mode = 'separate';
+    let uniteCols = [];
 
-  function init() {
-    mode = 'separate';
-    uniteCols = [];
-    syncMode();
+    function splitIntoNames() {
+      return document.getElementById('separate-into')?.value
+        .split(',')
+        .map(x => x.trim())
+        .filter(Boolean) || [];
+    }
+
+    function init() {
+      mode = 'separate';
+      uniteCols = [];
+      syncMode();
     renderUniteChips();
     updatePreview();
   }
@@ -402,39 +507,61 @@ const TVSEPARATE = (() => {
       .filter(Boolean);
   }
 
-  function updatePreview() {
-    const prev = document.getElementById('separate-preview');
-    if (!prev) return;
-    const name = TV.rName(TV.state.name || 'DT');
-    const sep = document.getElementById('sep-delim')?.value ?? '_';
-    const remove = document.getElementById('sep-remove')?.checked ?? true;
+    function updatePreview() {
+      const prev = document.getElementById('separate-preview');
+      const targetSummary = document.getElementById('separate-target-summary');
+      const friendlySummary = document.getElementById('separate-friendly-summary');
+      if (!prev) return;
+      const name = TV.rName(TV.state.name || 'DT');
+      const sep = document.getElementById('sep-delim')?.value ?? '_';
+      const remove = document.getElementById('sep-remove')?.checked ?? true;
 
-    if (mode === 'separate') {
-      const source = document.getElementById('separate-source')?.value || '';
-      const into = intoNames();
-      if (!source || !into.length) {
-        prev.textContent = '# choose the source column and new output columns';
+      if (mode === 'separate') {
+        const source = document.getElementById('separate-source')?.value || '';
+        const into = splitIntoNames();
+        if (!source || !into.length) {
+          if (targetSummary) targetSummary.textContent = 'Choose a source column and one or more new columns to create.';
+          if (friendlySummary) friendlySummary.textContent = 'Use this when one column contains several pieces of information, such as "City, Province" or "First Last".';
+          prev.textContent = '# choose the source column and new output columns';
+          return;
+        }
+        const lines = [
+          `${name}[, c(${into.map(TV.rString).join(', ')}) := data.table::tstrsplit(as.character(${TV.rName(source)}), ${TV.rString(sep)}, fixed = TRUE, fill = NA_character_, keep = c(${into.map((_, i) => i + 1).join(', ')}))]`,
+        ];
+        if (remove) lines.push(`${name}[, ${TV.rName(source)} := NULL]`);
+        if (targetSummary) {
+          targetSummary.textContent = `Result: split "${source}" into ${into.join(', ')}.`;
+        }
+        if (friendlySummary) {
+          friendlySummary.textContent = remove
+            ? `This will split "${source}" wherever "${sep}" appears, create ${into.join(', ')}, and remove the original source column.`
+            : `This will split "${source}" wherever "${sep}" appears and create ${into.join(', ')} while keeping the original source column.`;
+        }
+        prev.textContent = lines.join('\n');
+        return;
+      }
+
+      const into = document.getElementById('unite-into')?.value?.trim() || '';
+      if (!into || !uniteCols.length) {
+        if (targetSummary) targetSummary.textContent = 'Choose one or more source columns and a result column name.';
+        if (friendlySummary) friendlySummary.textContent = 'Use this when the pieces you want are spread across several columns and should become one combined value.';
+        prev.textContent = '# choose the columns to combine and the output column name';
         return;
       }
       const lines = [
-        `${name}[, c(${into.map(TV.rString).join(', ')}) := data.table::tstrsplit(as.character(${TV.rName(source)}), ${TV.rString(sep)}, fixed = TRUE, fill = NA_character_, keep = c(${into.map((_, i) => i + 1).join(', ')}))]`,
+        `${name}[, ${TV.rName(into)} := do.call(paste, c(.SD, sep = ${TV.rString(sep)})), .SDcols = c(${uniteCols.map(TV.rString).join(', ')})]`,
       ];
-      if (remove) lines.push(`${name}[, ${TV.rName(source)} := NULL]`);
+      if (remove) lines.push(`${name}[, c(${uniteCols.map(TV.rString).join(', ')}) := NULL]`);
+      if (targetSummary) {
+        targetSummary.textContent = `Result: combine ${uniteCols.join(', ')} into "${into}".`;
+      }
+      if (friendlySummary) {
+        friendlySummary.textContent = remove
+          ? `This will join ${uniteCols.join(', ')} using "${sep}", save the result in "${into}", and remove the original source columns.`
+          : `This will join ${uniteCols.join(', ')} using "${sep}" and save the result in "${into}" while keeping the original source columns.`;
+      }
       prev.textContent = lines.join('\n');
-      return;
     }
-
-    const into = document.getElementById('unite-into')?.value?.trim() || '';
-    if (!into || !uniteCols.length) {
-      prev.textContent = '# choose the columns to combine and the output column name';
-      return;
-    }
-    const lines = [
-      `${name}[, ${TV.rName(into)} := do.call(paste, c(.SD, sep = ${TV.rString(sep)})), .SDcols = c(${uniteCols.map(TV.rString).join(', ')})]`,
-    ];
-    if (remove) lines.push(`${name}[, c(${uniteCols.map(TV.rString).join(', ')}) := NULL]`);
-    prev.textContent = lines.join('\n');
-  }
 
   async function apply() {
     const sep = document.getElementById('sep-delim')?.value ?? '_';
@@ -463,11 +590,11 @@ const TVSEPARATE = (() => {
       TV.state.ncol = res.ncol;
       TV.updateDimLabel();
       TV.renderTable();
-      TV.closePanel();
-    } catch (e) {
-      await TV.showError((mode === 'separate' ? 'Separate' : 'Unite') + ' error:\n' + e.message);
+        TV.closePanel();
+      } catch (e) {
+        await TV.showError((mode === 'separate' ? 'Separate' : 'Unite') + ' error:\n' + e.message);
+      }
     }
-  }
 
   return { init, setMode, addUniteCol, removeUniteCol, updatePreview, apply };
 })();

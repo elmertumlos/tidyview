@@ -25,73 +25,80 @@ TV.panels.recode = function(pane) {
       </div>
       <div>
         <div class="tv-panel-title">recode</div>
-        <div class="tv-panel-sub">relabel values and convert to factor</div>
+        <div class="tv-panel-sub">change labels, group values, or create categories</div>
       </div>
       <button class="tv-panel-close" onclick="TV.closePanel()">x</button>
     </div>
 
     <div class="tv-panel-body">
+      <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:14px;line-height:1.6">
+        Choose a column, decide which values should change, and tidyview will build the R code for you.
+      </div>
+
       <div class="tv-field">
-        <label class="tv-field-label">column to recode</label>
+        <label class="tv-field-label">source column</label>
         <select class="tv-select" id="recode-col" onchange="TVRECODE.loadValues()">${colOpts}</select>
       </div>
 
       <div class="tv-field">
-        <label class="tv-field-label">save result to</label>
+        <label class="tv-field-label">where to save the result</label>
         <div style="display:flex;gap:8px;align-items:center">
-          <button class="tv-chip selected" id="recode-same-btn" onclick="TVRECODE.setTarget('same')">same column (overwrite)</button>
-          <button class="tv-chip" id="recode-new-btn" onclick="TVRECODE.setTarget('new')">new column</button>
+          <button class="tv-chip selected" id="recode-same-btn" onclick="TVRECODE.setTarget('same')">replace this column</button>
+          <button class="tv-chip" id="recode-new-btn" onclick="TVRECODE.setTarget('new')">create a new column</button>
         </div>
-        <input class="tv-input" id="recode-new-col" placeholder="new column name"
+        <input class="tv-input" id="recode-new-col" placeholder="e.g. gender_group or status_label"
           style="display:none;margin-top:6px" oninput="TVRECODE.updatePreview()">
       </div>
 
       <div class="tv-field">
-        <label class="tv-field-label">recode mode</label>
+        <label class="tv-field-label">how to choose the new values</label>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <button class="tv-chip selected" id="recode-map-btn" onclick="TVRECODE.setMode('map')">value mappings</button>
-          <button class="tv-chip" id="recode-rule-btn" onclick="TVRECODE.setMode('rule')">conditional rules</button>
+          <button class="tv-chip selected" id="recode-map-btn" onclick="TVRECODE.setMode('map')">match exact values</button>
+          <button class="tv-chip" id="recode-rule-btn" onclick="TVRECODE.setMode('rule')">use if/then rules</button>
         </div>
       </div>
 
       <div class="tv-field" id="recode-mapping-section">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <label class="tv-field-label" style="margin:0">value mappings</label>
+          <label class="tv-field-label" style="margin:0">change these values</label>
           <div style="display:flex;gap:8px;align-items:center">
             <span id="recode-loading" style="font-size:10px;color:var(--md-on-surface-variant)"></span>
             <button id="recode-mode-btn" onclick="TVRECODE.toggleMode()"
               style="font-size:10px;padding:3px 8px;border-radius:12px;border:1px solid var(--md-outline-variant);background:transparent;cursor:pointer;color:var(--md-primary)">
-              bulk paste
+              paste many
             </button>
           </div>
+        </div>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Keep the left side as the current value and type what it should become on the right.
         </div>
 
         <div id="recode-table-mode">
           <div style="display:grid;grid-template-columns:1fr 16px 1fr;gap:4px;margin-bottom:4px;padding:0 2px">
-            <span style="font-size:10px;font-weight:500;color:var(--md-on-surface-variant);text-transform:uppercase;letter-spacing:.06em">original value</span>
+            <span style="font-size:10px;font-weight:500;color:var(--md-on-surface-variant);text-transform:uppercase;letter-spacing:.06em">current value</span>
             <span></span>
-            <span style="font-size:10px;font-weight:500;color:var(--md-on-surface-variant);text-transform:uppercase;letter-spacing:.06em">new label</span>
+            <span style="font-size:10px;font-weight:500;color:var(--md-on-surface-variant);text-transform:uppercase;letter-spacing:.06em">change to</span>
           </div>
           <div id="recode-rows" style="max-height:200px;overflow-y:auto"></div>
           <button class="tv-add-btn" style="margin-top:6px" onclick="TVRECODE.addRow('','')">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
               <line x1="7" y1="2" x2="7" y2="12"/><line x1="2" y1="7" x2="12" y2="7"/>
             </svg>
-            add row
+            add value change
           </button>
         </div>
 
         <div id="recode-bulk-mode" style="display:none">
           <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:6px;line-height:1.5">
-            One mapping per line. Paste directly from Excel (two columns) or type:<br>
-            <code style="font-size:10px">original value = new label</code>
+            Add one value change per line. You can paste two columns from Excel or type:<br>
+            <code style="font-size:10px">current value = change to</code>
           </div>
           <textarea id="recode-bulk-text"
             style="width:100%;min-height:160px;padding:8px 10px;font:var(--tv-type-mono);font-size:11px;line-height:1.6;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm);background:var(--md-surface-variant);color:var(--md-on-surface);resize:vertical;outline:none"
             placeholder="1&#9;Male&#10;2&#9;Female&#10;3&#9;Other&#10;&#10;or:&#10;&#10;1 = Male&#10;2 = Female&#10;3 = Other"
             oninput="TVRECODE.updatePreview()"></textarea>
           <div style="font-size:10px;color:var(--md-on-surface-variant);margin-top:4px">
-            Supports tab-separated (copy from Excel) or <code>value = label</code> format.
+            Supports pasted Excel columns or <code>value = label</code> lines.
           </div>
         </div>
       </div>
@@ -101,15 +108,23 @@ TV.panels.recode = function(pane) {
       </div>
 
       <div class="tv-field">
-        <label class="tv-field-label">output type</label>
+        <label class="tv-field-label">how to store the result</label>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-          <button class="tv-chip selected" id="recode-chr-btn" onclick="TVRECODE.setFactor(false)">character</button>
-          <button class="tv-chip" id="recode-fct-btn" onclick="TVRECODE.setFactor(true)">factor (ordered)</button>
+          <button class="tv-chip selected" id="recode-chr-btn" onclick="TVRECODE.setFactor(false)">text labels</button>
+          <button class="tv-chip" id="recode-fct-btn" onclick="TVRECODE.setFactor(true)">categories (keep order)</button>
+        </div>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-top:6px;line-height:1.5">
+          Use text labels for regular values, or categories when the order should matter in tables or charts.
         </div>
       </div>
 
-      <div style="padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm)">
-        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:5px;font-weight:500">generated R</div>
+      <div style="margin-top:8px;padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm);background:var(--md-surface-variant)">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:5px;font-weight:500">What This Will Do</div>
+        <div id="recode-source-summary" style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:6px">Source column: choose a column above.</div>
+        <div id="recode-target-summary" style="font-size:12px;color:var(--md-on-surface);margin-bottom:6px">Result column: choose where to save the result.</div>
+        <div id="recode-friendly-summary" style="font-size:11px;color:var(--md-on-surface);line-height:1.6;margin-bottom:8px">Choose the values you want to change and tidyview will explain the result here.</div>
+        <div id="recode-warning" style="font-size:11px;color:var(--md-on-surface-variant);line-height:1.6;margin-bottom:10px">Values you do not list will stay unchanged unless your rules say otherwise.</div>
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:5px;font-weight:500">Generated R</div>
         <div id="recode-preview" style="font:var(--tv-type-mono);font-size:11px;line-height:1.7;color:var(--md-on-surface);word-break:break-all">
           <span style="color:var(--md-on-surface-variant);font-style:italic">select a column...</span>
         </div>
@@ -118,7 +133,7 @@ TV.panels.recode = function(pane) {
 
     <div class="tv-panel-footer">
       <button class="tv-btn-outlined" onclick="TV.closePanel()">cancel</button>
-      <button class="tv-btn-filled" id="recode-apply-btn" onclick="TVRECODE.apply()">apply recode -></button>
+      <button class="tv-btn-filled" id="recode-apply-btn" onclick="TVRECODE.apply()">apply changes -></button>
     </div>`;
 
   TVRECODE.init();
@@ -130,6 +145,7 @@ const TVRECODE = (() => {
   let target = 'same';
   let bulkMode = false;
   let mode = 'map';
+  let availableValues = [];
 
   function init() {
     rows = [];
@@ -137,6 +153,7 @@ const TVRECODE = (() => {
     target = 'same';
     bulkMode = false;
     mode = 'map';
+    availableValues = [];
     TV.initCaseWhenBuilder('recode-rules', {
       defaultResolver: defaultRuleExpr,
     });
@@ -226,6 +243,7 @@ const TVRECODE = (() => {
     try {
       const res = await TV.api('col_values', { col });
       const sugg = res.suggestions || res.values;
+      availableValues = res.values || [];
       rows = [];
       document.getElementById('recode-rows').innerHTML = '';
       res.values.forEach((v, i) => addRow(v, sugg[i] ?? v));
@@ -290,42 +308,126 @@ const TVRECODE = (() => {
     return bulkMode ? parseBulk() : getTableMapping();
   }
 
+  function uniqueTargetCount(mapping) {
+    return new Set((mapping || []).map(m => String(m.to ?? ''))).size;
+  }
+
+  function factorLevelsForMapping(mapping) {
+    const mappedTargets = (mapping || []).map(m => String(m.to ?? ''));
+    const mappedSources = new Set((mapping || []).map(m => String(m.from ?? '')));
+    const preservedValues = (availableValues || []).filter(v => !mappedSources.has(String(v)));
+    return Array.from(new Set([...mappedTargets, ...preservedValues]));
+  }
+
+  function outputTypeLabel() {
+    return asFactor ? 'ordered categories' : 'text labels';
+  }
+
+  function formatCountLabel(count, singular, plural) {
+    return `${count} ${count === 1 ? singular : plural}`;
+  }
+
   function updatePreview() {
     const prev = document.getElementById('recode-preview');
+    const sourceSummary = document.getElementById('recode-source-summary');
+    const targetSummary = document.getElementById('recode-target-summary');
+    const friendlySummary = document.getElementById('recode-friendly-summary');
+    const warning = document.getElementById('recode-warning');
     if (!prev) return;
     const col = document.getElementById('recode-col')?.value;
     const newColVal = document.getElementById('recode-new-col')?.value?.trim() || '';
     const tgt = (target === 'new' && newColVal) ? newColVal : col;
     if (!col || !tgt) {
       prev.innerHTML = `<span style="color:var(--md-on-surface-variant);font-style:italic">configure above...</span>`;
+      if (sourceSummary) sourceSummary.textContent = 'Source column: choose a column above.';
+      if (targetSummary) targetSummary.textContent = 'Result column: choose where to save the result.';
+      if (friendlySummary) friendlySummary.textContent = 'Choose the values you want to change and tidyview will explain the result here.';
+      if (warning) warning.textContent = 'Values you do not list will stay unchanged unless your rules say otherwise.';
       return;
     }
+    if (sourceSummary) sourceSummary.textContent = `Source column: "${col}".`;
     let code;
+    let warningParts = [];
     if (mode === 'rule') {
       const exprBase = TV.getCaseWhenExpr('recode-rules');
       if (!exprBase) {
         prev.innerHTML = `<span style="color:var(--md-on-surface-variant);font-style:italic">add at least one rule above...</span>`;
+        if (targetSummary) targetSummary.textContent = target === 'same'
+          ? `Result column: replace values in "${col}".`
+          : `Result column: create "${tgt}".`;
+        if (friendlySummary) friendlySummary.textContent = target === 'same'
+          ? `Add one or more if/then rules to decide which values in "${col}" should be replaced.`
+          : `Add one or more if/then rules to build "${tgt}" from "${col}".`;
+        if (warning) warning.textContent = target === 'same'
+          ? 'Rules that match will replace values in this column. Rows that match no rule keep the original value by default.'
+          : 'Rows that match no rule become missing unless you set an otherwise expression.';
         return;
       }
       const expr = asFactor ? `factor(${exprBase})` : exprBase;
       code = `${TV.rName(TV.state.name || 'DT')}[, ${TV.rName(tgt)} := ${expr}]`;
+      warningParts.push(target === 'same'
+        ? `This will replace values in "${col}" wherever a rule matches.`
+        : `This will create "${tgt}" from "${col}".`);
+      warningParts.push(target === 'same'
+        ? 'Rows that match no rule keep their original value by default.'
+        : 'Rows that match no rule become missing unless you set an otherwise expression.');
+      if (friendlySummary) friendlySummary.textContent = target === 'same'
+        ? `This will check your if/then rules and replace matching values in "${col}". The result will be saved as ${outputTypeLabel()}.`
+        : `This will build "${tgt}" by checking your if/then rules against "${col}". The result will be saved as ${outputTypeLabel()}.`;
     } else {
       const mapping = getMapping();
       if (!mapping.length) {
         prev.innerHTML = `<span style="color:var(--md-on-surface-variant);font-style:italic">configure above...</span>`;
+        if (targetSummary) targetSummary.textContent = target === 'same'
+          ? `Result column: replace values in "${col}".`
+          : `Result column: create "${tgt}" from "${col}".`;
+        if (friendlySummary) friendlySummary.textContent = 'Add one or more exact value matches so tidyview can show the result.';
+        if (warning) warning.textContent = 'Values you do not list will stay unchanged.';
         return;
       }
-      const labels = mapping.map(m => quoteRString(m.to)).join(', ');
-      const keys = mapping.map(m => quoteRString(m.from)).join(', ');
-      const lookup = `stats::setNames(c(${labels}), c(${keys}))[as.character(${TV.rName(col)})]`;
+      const condArgs = mapping
+        .map(m => `as.character(${TV.rName(col)}) == ${quoteRString(m.from)}, ${quoteRString(m.to)}`)
+        .join(', ');
+      const lookup = `data.table::fcase(${condArgs}, default = as.character(${TV.rName(col)}))`;
       if (asFactor) {
-        const lvls = mapping.map(m => quoteRString(m.to)).join(', ');
+        const lvls = factorLevelsForMapping(mapping).map(quoteRString).join(', ');
         code = `${TV.rName(TV.state.name || 'DT')}[, ${TV.rName(tgt)} := factor(${lookup}, levels = c(${lvls}))]`;
       } else {
         code = `${TV.rName(TV.state.name || 'DT')}[, ${TV.rName(tgt)} := ${lookup}]`;
       }
+      warningParts.push(target === 'same'
+        ? `This will replace values in "${col}".`
+        : `This will create "${tgt}" from "${col}".`);
+      const unchangedCount = Math.max(0, (availableValues || []).length - new Set(mapping.map(m => String(m.from ?? ''))).size);
+      warningParts.push('Any value you do not list will stay exactly as it is.');
+      if (uniqueTargetCount(mapping) < mapping.length) {
+        warningParts.push('Some original values will be grouped into the same new label.');
+      }
+      if (friendlySummary) {
+        const mappedCount = mapping.length;
+        const actionText = target === 'same'
+          ? `This will replace ${formatCountLabel(mappedCount, 'listed value', 'listed values')} in "${col}".`
+          : `This will create "${tgt}" from "${col}" and change ${formatCountLabel(mappedCount, 'listed value', 'listed values')}.`;
+        const keepText = unchangedCount > 0
+          ? ` ${formatCountLabel(unchangedCount, 'other value', 'other values')} will stay unchanged.`
+          : ' Every available value is covered by your list.';
+        const groupText = uniqueTargetCount(mapping) < mapping.length
+          ? ' Some values will be grouped into the same result label.'
+          : '';
+        const storageText = ` The result will be saved as ${outputTypeLabel()}.`;
+        friendlySummary.textContent = `${actionText}${keepText}${groupText}${storageText}`;
+      }
     }
     prev.textContent = code;
+    if (targetSummary) {
+      targetSummary.textContent = target === 'same'
+        ? `Result column: replace values in "${col}".`
+        : `Result column: create "${tgt}" from "${col}".`;
+    }
+    if (warning) {
+      if (asFactor) warningParts.push('The result will be stored as ordered categories.');
+      warning.textContent = warningParts.join(' ');
+    }
   }
 
   async function apply() {
@@ -334,6 +436,13 @@ const TVRECODE = (() => {
     if (target === 'new' && !newColVal) {
       await TV.showMessage('Enter a name for the new column.');
       return;
+    }
+    if (target === 'same') {
+      const ok = await TV.confirmMessage(
+        `This will replace values in "${col}". Values you do not list will stay as they are. Continue?`,
+        { title: 'Replace Values In Column', confirmLabel: 'apply' }
+      );
+      if (!ok) return;
     }
 
     const btn = document.getElementById('recode-apply-btn');
@@ -380,7 +489,7 @@ const TVRECODE = (() => {
     } finally {
       if (btn) {
         btn.disabled = false;
-        btn.textContent = 'apply recode ->';
+        btn.textContent = 'apply changes ->';
       }
     }
   }

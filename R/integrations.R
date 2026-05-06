@@ -20,7 +20,11 @@
 }
 
 
-.tv_rcdf_code <- function(path, decryption_key, password = NULL, object_name = "rcdf_data") {
+.tv_rcdf_code <- function(path,
+                          decryption_key,
+                          password = NULL,
+                          object_name = "rcdf_data",
+                          return_meta = FALSE) {
   args <- c(
     sprintf("path = %s", .str_lit(normalizePath(path, winslash = "/", mustWork = TRUE))),
     sprintf("decryption_key = %s", .str_lit(normalizePath(decryption_key, winslash = "/", mustWork = TRUE)))
@@ -28,7 +32,18 @@
   if (!is.null(password) && nzchar(password)) {
     args <- c(args, sprintf("password = %s", .str_lit(password)))
   }
+  if (isTRUE(return_meta)) {
+    args <- c(args, "return_meta = TRUE")
+  }
   sprintf("%s <- rcdf::read_rcdf(%s)", .code_name(object_name), paste(args, collapse = ", "))
+}
+
+
+.tv_attach_rcdf_metadata <- function(x, rcdf_obj, return_meta = FALSE) {
+  if (!isTRUE(return_meta)) return(x)
+  meta <- attr(rcdf_obj, "metadata", exact = TRUE)
+  if (!is.null(meta)) attr(x, "metadata") <- meta
+  x
 }
 
 
@@ -103,15 +118,22 @@
 
 #' Read an RCDF file
 #'
+#' This helper requires the optional `rcdf` package. `tidyview` itself can run
+#' without `rcdf` installed; only RCDF import needs it.
+#'
 #' @param path Path to an `.rcdf` file.
-#' @param decryption_key Path to the private key used to decrypt the RCDF file.
-#' @param password Optional password for the private key.
+#' @param decryption_key Path to the decryption key used to open the RCDF file.
+#'   In the current tidyview workflow, this is typically a PEM private-key
+#'   file path.
+#' @param password Optional password for the private-key file.
+#' @param return_meta If `TRUE`, include RCDF metadata in the returned object.
 #' @param table Optional table name to extract from the RCDF object.
 #' @param as Name to use for the RCDF object in generated code.
 #' @export
 tv_read_rcdf <- function(path,
                          decryption_key,
                          password = NULL,
+                         return_meta = FALSE,
                          table = NULL,
                          as = "rcdf_data") {
   .tv_require_namespace("rcdf", "RCDF import")
@@ -119,13 +141,21 @@ tv_read_rcdf <- function(path,
   obj <- rcdf::read_rcdf(
     path = path,
     decryption_key = decryption_key,
-    password = password
+    password = password,
+    return_meta = return_meta
   )
-  code <- .tv_rcdf_code(path, decryption_key, password = password, object_name = as)
+  code <- .tv_rcdf_code(
+    path,
+    decryption_key,
+    password = password,
+    object_name = as,
+    return_meta = return_meta
+  )
 
   if (!is.null(table)) {
     if (!table %in% names(obj)) stop("Table '", table, "' not found in RCDF object.")
     dt <- data.table::as.data.table(.strip_labelled(obj[[table]]))
+    dt <- .tv_attach_rcdf_metadata(dt, obj, return_meta = return_meta)
     attr(dt, "tv_code") <- paste(
       code,
       sprintf("%s <- data.table::as.data.table(%s[[%s]])",
@@ -139,6 +169,7 @@ tv_read_rcdf <- function(path,
   for (nm in names(tables)) {
     if (is.data.frame(tables[[nm]]) || data.table::is.data.table(tables[[nm]])) {
       tables[[nm]] <- data.table::as.data.table(.strip_labelled(tables[[nm]]))
+      tables[[nm]] <- .tv_attach_rcdf_metadata(tables[[nm]], obj, return_meta = return_meta)
     }
   }
   attr(tables, "tv_code") <- code
