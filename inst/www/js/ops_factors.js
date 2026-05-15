@@ -29,6 +29,9 @@ TV.panels.factors = function(pane) {
     <div class="tv-panel-body">
       <div class="tv-field">
         <label class="tv-field-label">column</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Choose the category column whose labels or level order you want to clean up.
+        </div>
         <select class="tv-select" id="factor-col" onchange="TVFACTORS.loadValues()">
           ${colOpts}
         </select>
@@ -36,6 +39,9 @@ TV.panels.factors = function(pane) {
 
       <div class="tv-field">
         <label class="tv-field-label">save result to</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Save to the same column when you want to replace the current categories, or a new column when you want to compare before and after.
+        </div>
         <div style="display:flex;gap:8px;align-items:center">
           <button class="tv-chip selected" id="factor-same-btn" onclick="TVFACTORS.setTarget('same')">same column</button>
           <button class="tv-chip" id="factor-new-btn" onclick="TVFACTORS.setTarget('new')">new column</button>
@@ -45,6 +51,9 @@ TV.panels.factors = function(pane) {
 
       <div class="tv-field">
         <label class="tv-field-label">tool</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Pick the category task you need: merge labels, lump rare values, reorder levels, or set the reference level.
+        </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="tv-chip selected" id="factor-mode-collapse" onclick="TVFACTORS.setMode('collapse')">collapse</button>
           <button class="tv-chip" id="factor-mode-lump" onclick="TVFACTORS.setMode('lump')">lump rare</button>
@@ -117,6 +126,9 @@ TV.panels.factors = function(pane) {
 
       <div class="tv-field">
         <label class="tv-field-label">current values</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Use this preview to confirm the existing labels before you collapse, reorder, or set a reference level.
+        </div>
         <div id="factor-values-hint" style="padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm);font-size:11px;color:var(--md-on-surface-variant);line-height:1.6">loading values...</div>
       </div>
 

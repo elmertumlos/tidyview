@@ -42,6 +42,22 @@ TV.panels.validate = function(pane) {
         Build validation rules for the active dataset and see how many rows fail each check. Use this after loading or cleaning data, before reporting or export.
       </div>
 
+      <div style="padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm);margin-bottom:12px;background:var(--md-surface-variant)">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:8px;font-weight:500">quick templates</div>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);line-height:1.6;margin-bottom:10px">
+          Start with a common validation pattern, then adjust the column or settings below if needed.
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="tv-chip" type="button" onclick="TVVALIDATE.addRecipe('required_field')">required field</button>
+          <button class="tv-chip" type="button" onclick="TVVALIDATE.addRecipe('unique_id')">unique ID</button>
+          <button class="tv-chip" type="button" onclick="TVVALIDATE.addRecipe('allowed_values')">allowed values</button>
+          <button class="tv-chip" type="button" onclick="TVVALIDATE.addRecipe('numeric_range')">numeric range</button>
+          <button class="tv-chip" type="button" onclick="TVVALIDATE.addRecipe('date_required')">date required</button>
+          <button class="tv-chip" type="button" onclick="TVVALIDATE.addRecipe('date_range')">date range</button>
+          <button class="tv-chip" type="button" onclick="TVVALIDATE.addRecipe('date_not_future')">date not in future</button>
+        </div>
+      </div>
+
       <div class="tv-field" style="margin-top:0">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <button class="tv-btn-outlined" type="button" style="padding:8px 14px" onclick="TVVALIDATE.addRule()">add rule</button>
@@ -58,6 +74,11 @@ TV.panels.validate = function(pane) {
       <div class="tv-compare-section">
         <div class="tv-compare-title">validation results</div>
         <div id="validate-results" class="tv-compare-list"></div>
+      </div>
+
+      <div class="tv-compare-section">
+        <div class="tv-compare-title">columns with most issues</div>
+        <div id="validate-columns" class="tv-compare-list"></div>
       </div>
 
       <div style="margin-top:14px;padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm)">
@@ -88,6 +109,26 @@ const TVVALIDATE = (() => {
     return cols()[0]?.name || '';
   }
 
+  function defaultNumericColumn() {
+    return cols().find(col => ['int', 'dbl'].includes(col.type))?.name || defaultColumn();
+  }
+
+  function defaultTextColumn() {
+    return cols().find(col => ['chr', 'fct', 'lgl'].includes(col.type))?.name || defaultColumn();
+  }
+
+  function defaultDateColumn() {
+    return cols().find(col => ['Date', 'IDate', 'POSIXct'].includes(col.type))?.name || defaultColumn();
+  }
+
+  function columnType(name) {
+    return cols().find(col => col.name === name)?.type || '';
+  }
+
+  function isDateType(type) {
+    return ['Date', 'IDate', 'POSIXct'].includes(type);
+  }
+
   function nextId() {
     counter += 1;
     return counter;
@@ -108,6 +149,142 @@ const TVVALIDATE = (() => {
     };
   }
 
+  function ruleTypeHelp(type) {
+    const help = {
+      not_missing: 'Fails rows where the chosen column is blank or missing.',
+      unique: 'Fails repeated values in the chosen column.',
+      allowed: 'Fails values that are not included in your approved list.',
+      regex: 'Fails values that do not match the text pattern you provide.',
+      range: 'Fails numeric values outside the minimum and maximum you set.',
+      not_future: 'Fails dates or timestamps that occur after today.',
+      expr: 'Fails rows where your custom expression returns FALSE.',
+    };
+    return help[type] || 'Fails rows that do not meet this rule.';
+  }
+
+  function ruleSummary(rule) {
+    const colLabel = rule.col ? `<code>${TV.escapeHtml(rule.col)}</code>` : 'the selected column';
+    const summaries = {
+      not_missing: `Checks that ${colLabel} is filled in on every row.`,
+      unique: `Checks that ${colLabel} does not repeat.`,
+      allowed: `Checks that ${colLabel} only uses the allowed values you list.`,
+      regex: `Checks that ${colLabel} matches the text pattern you provide.`,
+      range: `Checks that ${colLabel} stays within the minimum and maximum you set.`,
+      not_future: `Checks that ${colLabel} is today or earlier.`,
+      expr: 'Checks your custom row-by-row expression.',
+    };
+    return summaries[rule.type] || 'Checks whether each row passes this rule.';
+  }
+
+  function recipeRule(recipeType) {
+    if (recipeType === 'required_field') {
+      const col = defaultColumn();
+      return {
+        id: nextId(),
+        type: 'not_missing',
+        col,
+        label: col ? `${col} is required` : 'required field',
+        values: '',
+        pattern: '',
+        ignore_case: false,
+        min: '',
+        max: '',
+        expr: '',
+      };
+    }
+    if (recipeType === 'unique_id') {
+      const col = defaultColumn();
+      return {
+        id: nextId(),
+        type: 'unique',
+        col,
+        label: col ? `${col} must be unique` : 'unique ID',
+        values: '',
+        pattern: '',
+        ignore_case: false,
+        min: '',
+        max: '',
+        expr: '',
+      };
+    }
+    if (recipeType === 'allowed_values') {
+      const col = defaultTextColumn();
+      return {
+        id: nextId(),
+        type: 'allowed',
+        col,
+        label: col ? `${col} must use approved values` : 'allowed values',
+        values: '',
+        pattern: '',
+        ignore_case: false,
+        min: '',
+        max: '',
+        expr: '',
+      };
+    }
+    if (recipeType === 'numeric_range') {
+      const col = defaultNumericColumn();
+      return {
+        id: nextId(),
+        type: 'range',
+        col,
+        label: col ? `${col} must stay in range` : 'numeric range',
+        values: '',
+        pattern: '',
+        ignore_case: false,
+        min: '',
+        max: '',
+        expr: '',
+      };
+    }
+    if (recipeType === 'date_required') {
+      const col = defaultDateColumn();
+      return {
+        id: nextId(),
+        type: 'not_missing',
+        col,
+        label: col ? `${col} is required` : 'date required',
+        values: '',
+        pattern: '',
+        ignore_case: false,
+        min: '',
+        max: '',
+        expr: '',
+      };
+    }
+    if (recipeType === 'date_range') {
+      const col = defaultDateColumn();
+      return {
+        id: nextId(),
+        type: 'range',
+        col,
+        label: col ? `${col} must stay in date range` : 'date range',
+        values: '',
+        pattern: '',
+        ignore_case: false,
+        min: '',
+        max: '',
+        expr: '',
+      };
+    }
+    if (recipeType === 'date_not_future') {
+      const col = defaultDateColumn();
+      return {
+        id: nextId(),
+        type: 'not_future',
+        col,
+        label: col ? `${col} cannot be in the future` : 'date not in future',
+        values: '',
+        pattern: '',
+        ignore_case: false,
+        min: '',
+        max: '',
+        expr: '',
+      };
+    }
+    return emptyRule();
+  }
+
   function typeOptions(selected) {
     const items = [
       ['not_missing', 'not missing'],
@@ -115,6 +292,7 @@ const TVVALIDATE = (() => {
       ['allowed', 'allowed values'],
       ['regex', 'regex'],
       ['range', 'range'],
+      ['not_future', 'not in future'],
       ['expr', 'custom expression'],
     ];
     return items.map(([value, label]) =>
@@ -129,6 +307,7 @@ const TVVALIDATE = (() => {
   }
 
   function extraFields(rule) {
+    const dateLike = isDateType(columnType(rule.col));
     if (rule.type === 'allowed') {
       return `
         <div class="tv-field">
@@ -152,11 +331,11 @@ const TVVALIDATE = (() => {
         <div class="tv-plot-grid">
           <div class="tv-field">
             <label class="tv-field-label">minimum (optional)</label>
-            <input class="tv-input" value="${TV.escapeAttr(rule.min || '')}" placeholder="e.g. 0 or 2024-01-01" oninput='TVVALIDATE.updateRule(${rule.id}, "min", this.value)'>
+            <input class="tv-input" value="${TV.escapeAttr(rule.min || '')}" placeholder="${dateLike ? 'e.g. 2024-01-01' : 'e.g. 0 or 2024-01-01'}" oninput='TVVALIDATE.updateRule(${rule.id}, "min", this.value)'>
           </div>
           <div class="tv-field">
             <label class="tv-field-label">maximum (optional)</label>
-            <input class="tv-input" value="${TV.escapeAttr(rule.max || '')}" placeholder="e.g. 120 or 2024-12-31" oninput='TVVALIDATE.updateRule(${rule.id}, "max", this.value)'>
+            <input class="tv-input" value="${TV.escapeAttr(rule.max || '')}" placeholder="${dateLike ? 'e.g. 2024-12-31' : 'e.g. 120 or 2024-12-31'}" oninput='TVVALIDATE.updateRule(${rule.id}, "max", this.value)'>
           </div>
         </div>`;
     }
@@ -187,6 +366,9 @@ const TVVALIDATE = (() => {
           <div class="tv-validate-rule-title">rule ${rule.id}</div>
           <button class="tv-remove-btn" type="button" onclick="TVVALIDATE.removeRule(${rule.id})" title="remove rule">×</button>
         </div>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:10px;line-height:1.6">
+          ${ruleSummary(rule)}
+        </div>
         <div class="tv-field">
           <label class="tv-field-label">label (optional)</label>
           <input class="tv-input" value="${TV.escapeAttr(rule.label || '')}" placeholder="e.g. record_id is required" oninput='TVVALIDATE.updateRule(${rule.id}, "label", this.value)'>
@@ -197,6 +379,9 @@ const TVVALIDATE = (() => {
             <select class="tv-select" onchange='TVVALIDATE.updateType(${rule.id}, this.value)'>
               ${typeOptions(rule.type)}
             </select>
+            <div style="font-size:10px;color:var(--md-on-surface-variant);margin-top:4px;line-height:1.5">
+              ${ruleTypeHelp(rule.type)}
+            </div>
           </div>
           ${needsColumn(rule) ? `
           <div class="tv-field">
@@ -225,14 +410,33 @@ const TVVALIDATE = (() => {
       ['rules', overview.rule_count || 0],
       ['passing rules', overview.passing_rules || 0],
       ['failing rules', overview.failing_rules || 0],
-      ['rows with issues', overview.rows_with_issues || 0],
-      ['rows without issues', overview.rows_without_issues || 0],
+      ['rows passed', overview.rows_without_issues || 0],
+      ['rows failed', overview.rows_with_issues || 0],
     ];
+    if (overview.error_rules) cards.push(['error rules', overview.error_rules || 0]);
     wrap.innerHTML = cards.map(([label, value]) => `
       <div class="tv-audit-card">
         <div class="tv-audit-card-label">${TV.escapeHtml(label)}</div>
         <div class="tv-audit-card-value">${Number(value || 0).toLocaleString()}</div>
       </div>`).join('');
+  }
+
+  function renderIssueColumns() {
+    const wrap = document.getElementById('validate-columns');
+    if (!wrap) return;
+    const items = result?.overview?.columns_with_issues || [];
+    if (!items.length) {
+      wrap.innerHTML = '<div class="tv-audit-empty">No column-level issues to show yet.</div>';
+      return;
+    }
+    wrap.innerHTML = items.map(item => `
+      <div class="tv-compare-item">
+        <div class="tv-compare-head">
+          <div class="tv-compare-label">${TV.escapeHtml(item.column || '')}</div>
+          <div class="tv-compare-meta">${Number(item.failing_rows || 0).toLocaleString()} failing row(s)</div>
+        </div>
+      </div>
+    `).join('');
   }
 
   function renderResults() {
@@ -293,6 +497,7 @@ const TVVALIDATE = (() => {
       result = null;
       renderOverview();
       renderResults();
+      renderIssueColumns();
       const preview = document.getElementById('validate-preview');
       if (preview) preview.textContent = '# add validation rules to build generated R';
       return;
@@ -303,13 +508,19 @@ const TVVALIDATE = (() => {
       result = res;
       renderOverview();
       renderResults();
+      renderIssueColumns();
       const preview = document.getElementById('validate-preview');
       if (preview) preview.textContent = res.code || '# validate unavailable';
-      setStatus(`${Number(res.overview.failing_rules || 0).toLocaleString()} failing rule(s); ${Number(res.overview.rows_with_issues || 0).toLocaleString()} rows with issues.`);
+      setStatus(
+        `${Number(res.overview.rows_without_issues || 0).toLocaleString()} row(s) passed all checks; ` +
+        `${Number(res.overview.rows_with_issues || 0).toLocaleString()} row(s) failed at least one rule; ` +
+        `${Number(res.overview.failing_rules || 0).toLocaleString()} failing rule(s).`
+      );
     } catch (e) {
       result = null;
       renderOverview();
       renderResults();
+      renderIssueColumns();
       const preview = document.getElementById('validate-preview');
       if (preview) preview.textContent = '# validate unavailable';
       setStatus(e.message);
@@ -323,10 +534,16 @@ const TVVALIDATE = (() => {
     renderRules();
     renderOverview();
     renderResults();
+    renderIssueColumns();
   }
 
   function addRule() {
     rules.push(emptyRule());
+    renderRules();
+  }
+
+  function addRecipe(recipeType) {
+    rules.push(recipeRule(recipeType));
     renderRules();
   }
 
@@ -337,6 +554,7 @@ const TVVALIDATE = (() => {
       result = null;
       renderOverview();
       renderResults();
+      renderIssueColumns();
       setStatus('Add at least one validation rule.');
       const preview = document.getElementById('validate-preview');
       if (preview) preview.textContent = '# add validation rules to build generated R';
@@ -354,9 +572,12 @@ const TVVALIDATE = (() => {
     if (!rule) return;
     rule.type = nextType;
     if (nextType === 'expr') rule.col = '';
+    else if (nextType === 'not_future') rule.col = defaultDateColumn();
+    else if (nextType === 'range' && !isDateType(columnType(rule.col))) rule.col = defaultNumericColumn();
+    else if (nextType === 'allowed') rule.col = defaultTextColumn();
     else if (!rule.col) rule.col = defaultColumn();
     renderRules();
   }
 
-  return { init, addRule, removeRule, updateRule, updateType, load };
+  return { init, addRule, addRecipe, removeRule, updateRule, updateType, load };
 })();

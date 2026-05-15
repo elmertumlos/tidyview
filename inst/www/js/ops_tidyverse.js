@@ -21,6 +21,9 @@ TV.panels.relocate = function(pane) {
     <div class="tv-panel-body">
       <div class="tv-field">
         <label class="tv-field-label">columns to move</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Choose the columns you want to reposition without changing their values.
+        </div>
         <div id="relocate-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:28px"></div>
         <select class="tv-select" id="relocate-add" onchange="TVRELOCATE.addCol(this.value);this.value=''">
           <option value="">add column...</option>${options}
@@ -28,6 +31,9 @@ TV.panels.relocate = function(pane) {
       </div>
       <div class="tv-field">
         <label class="tv-field-label">position</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Move the selected columns to the front, or place them before or after one anchor column.
+        </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
           <button class="tv-chip selected" id="rel-pos-front" onclick="TVRELOCATE.setMode('front')">to front</button>
           <button class="tv-chip" id="rel-pos-before" onclick="TVRELOCATE.setMode('before')">before</button>
@@ -175,6 +181,9 @@ TV.panels.drop_na = function(pane) {
         </div>
         <div class="tv-field">
           <label class="tv-field-label">which columns should be checked?</label>
+          <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+            Leave this empty to require complete rows, or choose only the columns that must be filled in.
+          </div>
           <div id="dropna-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:28px"></div>
           <select class="tv-select" id="dropna-add" onchange="TVDROPNA.addCol(this.value);this.value=''">
             <option value="">add column...</option>${options}
@@ -247,7 +256,8 @@ TV.panels.drop_na = function(pane) {
     }
 
     function init() {
-      cols = [];
+      const context = TV.consumePanelContext ? TV.consumePanelContext() : null;
+      cols = Array.isArray(context?.columns) ? context.columns.slice() : [];
       previewSeq = 0;
       latestPreview = null;
     renderChips();
@@ -431,6 +441,12 @@ TV.panels.separate = function(pane) {
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:5px;font-weight:500">What This Will Do</div>
           <div id="separate-target-summary" style="font-size:12px;color:var(--md-on-surface);margin-bottom:6px">Choose a mode and the columns you want to use.</div>
           <div id="separate-friendly-summary" style="font-size:11px;color:var(--md-on-surface);line-height:1.6;margin-bottom:10px">tidyview will describe the split or combine step here before you apply it.</div>
+          <div id="separate-impact" style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px">
+            Previewing impact...
+          </div>
+          <div id="separate-warning" style="font-size:11px;color:var(--md-on-surface-variant);line-height:1.6;margin-bottom:10px">
+            Review how many columns will be added or removed before applying this step.
+          </div>
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:5px;font-weight:500">Generated R</div>
           <div id="separate-preview" style="font:var(--tv-type-mono);font-size:11px;line-height:1.7;color:var(--md-on-surface);white-space:pre-wrap"></div>
         </div>
@@ -447,6 +463,8 @@ TV.panels.separate = function(pane) {
   const TVSEPARATE = (() => {
     let mode = 'separate';
     let uniteCols = [];
+    let previewSeq = 0;
+    let latestPreview = null;
 
     function splitIntoNames() {
       return document.getElementById('separate-into')?.value
@@ -455,9 +473,36 @@ TV.panels.separate = function(pane) {
         .filter(Boolean) || [];
     }
 
+    function separateParams() {
+      const sep = document.getElementById('sep-delim')?.value ?? '_';
+      const remove = document.getElementById('sep-remove')?.checked ?? true;
+      if (mode === 'separate') {
+        return {
+          op: 'separate',
+          params: {
+            column: document.getElementById('separate-source')?.value || '',
+            into: splitIntoNames(),
+            sep,
+            remove,
+          },
+        };
+      }
+      return {
+        op: 'unite',
+        params: {
+          columns: uniteCols.slice(),
+          into: document.getElementById('unite-into')?.value?.trim() || '',
+          sep,
+          remove,
+        },
+      };
+    }
+
     function init() {
       mode = 'separate';
       uniteCols = [];
+      previewSeq = 0;
+      latestPreview = null;
       syncMode();
     renderUniteChips();
     updatePreview();
@@ -511,6 +556,8 @@ TV.panels.separate = function(pane) {
       const prev = document.getElementById('separate-preview');
       const targetSummary = document.getElementById('separate-target-summary');
       const friendlySummary = document.getElementById('separate-friendly-summary');
+      const impact = document.getElementById('separate-impact');
+      const warning = document.getElementById('separate-warning');
       if (!prev) return;
       const name = TV.rName(TV.state.name || 'DT');
       const sep = document.getElementById('sep-delim')?.value ?? '_';
@@ -522,6 +569,8 @@ TV.panels.separate = function(pane) {
         if (!source || !into.length) {
           if (targetSummary) targetSummary.textContent = 'Choose a source column and one or more new columns to create.';
           if (friendlySummary) friendlySummary.textContent = 'Use this when one column contains several pieces of information, such as "City, Province" or "First Last".';
+          if (impact) impact.textContent = 'Preview will appear after you choose the source column and output columns.';
+          if (warning) warning.textContent = 'Review how many columns will be added or removed before applying this step.';
           prev.textContent = '# choose the source column and new output columns';
           return;
         }
@@ -538,34 +587,70 @@ TV.panels.separate = function(pane) {
             : `This will split "${source}" wherever "${sep}" appears and create ${into.join(', ')} while keeping the original source column.`;
         }
         prev.textContent = lines.join('\n');
-        return;
+      } else {
+        const into = document.getElementById('unite-into')?.value?.trim() || '';
+        if (!into || !uniteCols.length) {
+          if (targetSummary) targetSummary.textContent = 'Choose one or more source columns and a result column name.';
+          if (friendlySummary) friendlySummary.textContent = 'Use this when the pieces you want are spread across several columns and should become one combined value.';
+          if (impact) impact.textContent = 'Preview will appear after you choose the source columns and result column.';
+          if (warning) warning.textContent = 'Review how many columns will be added or removed before applying this step.';
+          prev.textContent = '# choose the columns to combine and the output column name';
+          return;
+        }
+        const lines = [
+          `${name}[, ${TV.rName(into)} := do.call(paste, c(.SD, sep = ${TV.rString(sep)})), .SDcols = c(${uniteCols.map(TV.rString).join(', ')})]`,
+        ];
+        if (remove) lines.push(`${name}[, c(${uniteCols.map(TV.rString).join(', ')}) := NULL]`);
+        if (targetSummary) {
+          targetSummary.textContent = `Result: combine ${uniteCols.join(', ')} into "${into}".`;
+        }
+        if (friendlySummary) {
+          friendlySummary.textContent = remove
+            ? `This will join ${uniteCols.join(', ')} using "${sep}", save the result in "${into}", and remove the original source columns.`
+            : `This will join ${uniteCols.join(', ')} using "${sep}" and save the result in "${into}" while keeping the original source columns.`;
+        }
+        prev.textContent = lines.join('\n');
       }
 
-      const into = document.getElementById('unite-into')?.value?.trim() || '';
-      if (!into || !uniteCols.length) {
-        if (targetSummary) targetSummary.textContent = 'Choose one or more source columns and a result column name.';
-        if (friendlySummary) friendlySummary.textContent = 'Use this when the pieces you want are spread across several columns and should become one combined value.';
-        prev.textContent = '# choose the columns to combine and the output column name';
-        return;
-      }
-      const lines = [
-        `${name}[, ${TV.rName(into)} := do.call(paste, c(.SD, sep = ${TV.rString(sep)})), .SDcols = c(${uniteCols.map(TV.rString).join(', ')})]`,
-      ];
-      if (remove) lines.push(`${name}[, c(${uniteCols.map(TV.rString).join(', ')}) := NULL]`);
-      if (targetSummary) {
-        targetSummary.textContent = `Result: combine ${uniteCols.join(', ')} into "${into}".`;
-      }
-      if (friendlySummary) {
-        friendlySummary.textContent = remove
-          ? `This will join ${uniteCols.join(', ')} using "${sep}", save the result in "${into}", and remove the original source columns.`
-          : `This will join ${uniteCols.join(', ')} using "${sep}" and save the result in "${into}" while keeping the original source columns.`;
-      }
-      prev.textContent = lines.join('\n');
+      if (!impact) return;
+      const payload = separateParams();
+      const isReady = mode === 'separate'
+        ? Boolean(payload.params.column && payload.params.into.length)
+        : Boolean(payload.params.into && payload.params.columns.length);
+      if (!isReady) return;
+
+      const seq = ++previewSeq;
+      impact.textContent = 'Previewing impact...';
+      TV.api('preview_op', payload)
+        .then(res => {
+          if (seq !== previewSeq) return;
+          latestPreview = res;
+          const addedCols = Math.max(0, Number(res?.after_ncol || 0) - Number(res?.before_ncol || 0));
+          const removedCols = Math.max(0, Number(res?.before_ncol || 0) - Number(res?.after_ncol || 0));
+          impact.textContent = TV.formatImpactSummary(res);
+          if (warning) {
+            if (mode === 'separate') {
+              warning.textContent = remove
+                ? `This will add ${addedCols.toLocaleString()} new column${addedCols === 1 ? '' : 's'} and remove the original source column. Row count will stay the same.`
+                : `This will add ${addedCols.toLocaleString()} new column${addedCols === 1 ? '' : 's'} while keeping the original source column. Row count will stay the same.`;
+            } else {
+              warning.textContent = remove
+                ? `This will create "${payload.params.into}" and remove ${payload.params.columns.length.toLocaleString()} source column${payload.params.columns.length === 1 ? '' : 's'}. Net column change: ${removedCols.toLocaleString()} fewer column${removedCols === 1 ? '' : 's'}.`
+                : `This will create "${payload.params.into}" while keeping the original source columns. Row count will stay the same.`;
+            }
+          }
+        })
+        .catch(e => {
+          if (seq !== previewSeq) return;
+          latestPreview = null;
+          impact.textContent = e.message;
+        });
     }
 
   async function apply() {
-    const sep = document.getElementById('sep-delim')?.value ?? '_';
-    const remove = document.getElementById('sep-remove')?.checked ?? true;
+      const sep = document.getElementById('sep-delim')?.value ?? '_';
+      const remove = document.getElementById('sep-remove')?.checked ?? true;
+      const preview = latestPreview;
     try {
       let res;
       if (mode === 'separate') {
@@ -575,6 +660,16 @@ TV.panels.separate = function(pane) {
           await TV.showMessage('Choose the source column and at least one output column.', { title: 'Separate Incomplete' });
           return;
         }
+        const addedCols = Math.max(0, Number(preview?.after_ncol || 0) - Number(preview?.before_ncol || 0));
+        if (addedCols > 0 || remove) {
+          const ok = await TV.confirmMessage(
+            remove
+              ? `This will create ${addedCols.toLocaleString()} new column${addedCols === 1 ? '' : 's'} and remove "${source}". Continue?`
+              : `This will create ${addedCols.toLocaleString()} new column${addedCols === 1 ? '' : 's'} from "${source}". Continue?`,
+            { title: 'Review Separate Impact', confirmLabel: 'apply' }
+          );
+          if (!ok) return;
+        }
         res = await TV.api('op_separate', { column: source, into, sep, remove });
       } else {
         const into = document.getElementById('unite-into')?.value?.trim() || '';
@@ -582,6 +677,14 @@ TV.panels.separate = function(pane) {
           await TV.showMessage('Choose the columns to combine and the output column name.', { title: 'Unite Incomplete' });
           return;
         }
+        const removeCount = remove ? uniteCols.length : 0;
+        const ok = await TV.confirmMessage(
+          remove
+            ? `This will create "${into}" and remove ${removeCount.toLocaleString()} source column${removeCount === 1 ? '' : 's'}. Continue?`
+            : `This will create "${into}" from ${uniteCols.length.toLocaleString()} source column${uniteCols.length === 1 ? '' : 's'}. Continue?`,
+          { title: 'Review Unite Impact', confirmLabel: 'apply' }
+        );
+        if (!ok) return;
         res = await TV.api('op_unite', { columns: uniteCols, into, sep, remove });
       }
       TV.pushCode(res.code);

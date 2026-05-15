@@ -47,6 +47,9 @@ TV.panels.missing = function(pane) {
 
       <div class="tv-field" style="margin-top:0">
         <label class="tv-field-label">group summary (optional)</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Choose a grouping column when you want to compare missingness across teams, regions, waves, or categories.
+        </div>
         <div style="display:flex;gap:8px;align-items:center">
           <select class="tv-select" id="missing-group-by" onchange="TVMISSING.load()">
             <option value="">no group summary</option>${options}
@@ -56,6 +59,9 @@ TV.panels.missing = function(pane) {
       </div>
 
       <div class="tv-field">
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          These shortcuts move straight into cleanup once you know where the missing values are.
+        </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <button class="tv-chip" type="button" onclick="TV.openPanel('drop_na')">open drop_na</button>
           <button class="tv-chip" type="button" onclick="TV.openPanel('fill_na')">open replace_na</button>
@@ -66,6 +72,19 @@ TV.panels.missing = function(pane) {
       <div id="missing-status" style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:10px">Loading missing-data summary...</div>
 
       <div id="missing-overview" class="tv-audit-grid"></div>
+
+      <div class="tv-compare-section">
+        <div class="tv-compare-title">focus first</div>
+        <div id="missing-highlights" class="tv-compare-list"></div>
+      </div>
+
+      <div class="tv-field" style="margin-top:14px">
+        <label class="tv-field-label">find a column with missing values</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Search the missing-data list by column name when you want to focus on one field.
+        </div>
+        <input class="tv-input" id="missing-search" placeholder="search column names..." oninput="TVMISSING.renderColumns()">
+      </div>
 
       <div class="tv-compare-section">
         <div class="tv-compare-title">columns with missing values</div>
@@ -96,6 +115,21 @@ TV.panels.missing = function(pane) {
 const TVMISSING = (() => {
   let result = null;
 
+  function listValues(value) {
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === 'object') return Object.values(value);
+    return [];
+  }
+
+  function scalarValue(value) {
+    if (value == null) return '';
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+    const vals = listValues(value).filter(v => v != null && v !== '');
+    return vals.length ? String(vals[0]) : '';
+  }
+
   function groupBy() {
     return String(document.getElementById('missing-group-by')?.value || '').trim();
   }
@@ -124,12 +158,51 @@ const TVMISSING = (() => {
       </div>`).join('');
   }
 
+  function renderHighlights() {
+    const wrap = document.getElementById('missing-highlights');
+    if (!wrap) return;
+    const highlights = result?.highlights || {};
+    const topColumns = Array.isArray(highlights.top_missing_columns) ? highlights.top_missing_columns.filter(col => Number(col?.missing_n || 0) > 0) : [];
+    const topGroups = Array.isArray(highlights.top_groups) ? highlights.top_groups.filter(group => Number(group?.missing_cells || 0) > 0) : [];
+    const items = [];
+
+    if (topColumns.length) {
+      items.push(`
+        <div class="tv-compare-item">
+          <strong>most affected columns</strong>
+          <span>${topColumns.map(col =>
+            `${TV.escapeHtml(col.name)} (${Number(col.missing_n || 0).toLocaleString()}; ${TV.escapeHtml(String(col.missing_pct || 0))}%)`
+          ).join(' | ')}</span>
+        </div>`);
+    }
+
+    if (topGroups.length) {
+      items.push(`
+        <div class="tv-compare-item">
+          <strong>groups with the most missing values</strong>
+          <span>${topGroups.map(group =>
+            `${TV.escapeHtml(scalarValue(group.group) || '(missing group)')} (${Number(group.missing_cells || 0).toLocaleString()} cells; ${TV.escapeHtml(String(group.missing_row_pct || 0))}% rows)`
+          ).join(' | ')}</span>
+        </div>`);
+    }
+
+    wrap.innerHTML = items.length
+      ? items.join('')
+      : '<div class="tv-audit-empty">No missing values were found in this dataset.</div>';
+  }
+
   function renderColumns() {
     const wrap = document.getElementById('missing-columns');
     if (!wrap) return;
-    const columns = (result?.columns || []).filter(col => Number(col.missing_n || 0) > 0);
+    const query = String(document.getElementById('missing-search')?.value || '').trim().toLowerCase();
+    const columns = (result?.columns || []).filter(col =>
+      Number(col.missing_n || 0) > 0 &&
+      (!query || String(col.name || '').toLowerCase().includes(query))
+    );
     if (!columns.length) {
-      wrap.innerHTML = '<div class="tv-audit-empty">No missing values were found in this dataset.</div>';
+      wrap.innerHTML = query
+        ? '<div class="tv-audit-empty">No missing-data columns match this search.</div>'
+        : '<div class="tv-audit-empty">No missing values were found in this dataset.</div>';
       return;
     }
     wrap.innerHTML = columns.map(col => `
@@ -137,7 +210,7 @@ const TVMISSING = (() => {
         <div class="tv-audit-col-head">
           <div>
             <div class="tv-audit-col-name">${TV.escapeHtml(col.name)}</div>
-            ${col.label ? `<div class="tv-audit-col-label">${TV.escapeHtml(col.label)}</div>` : ''}
+            ${scalarValue(col.label) ? `<div class="tv-audit-col-label">${TV.escapeHtml(scalarValue(col.label))}</div>` : ''}
           </div>
           <span class="tv-type tv-type-${TV.escapeAttr(col.type)}">${TV.escapeHtml(col.type)}</span>
         </div>
@@ -145,8 +218,13 @@ const TVMISSING = (() => {
           <span>missing: ${Number(col.missing_n || 0).toLocaleString()} (${col.missing_pct || 0}%)</span>
           <span>distinct: ${Number(col.distinct_n || 0).toLocaleString()}</span>
         </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+          <button class="tv-chip" type="button" onclick='TV.openPanelForColumns("fill_na", ${JSON.stringify([col.name])})'>replace missing values</button>
+          <button class="tv-chip" type="button" onclick='TV.openPanelForColumns("drop_na", ${JSON.stringify([col.name])})'>drop rows missing here</button>
+        </div>
         <div class="tv-audit-col-summary">${TV.escapeHtml(col.summary || '')}</div>
-        ${col.sample ? `<div class="tv-audit-col-meta">sample: ${TV.escapeHtml(col.sample.join(', '))}</div>` : ''}
+        <div class="tv-audit-col-meta">${Number(col.missing_pct || 0) >= 50 ? 'High missingness: review whether this field is required, should be filled, or should be dropped for specific steps.' : 'Review whether these missing values are expected before dropping or filling the column.'}</div>
+        ${listValues(col.sample).length ? `<div class="tv-audit-col-meta">sample: ${TV.escapeHtml(listValues(col.sample).join(', '))}</div>` : ''}
       </div>
     `).join('');
   }
@@ -161,8 +239,8 @@ const TVMISSING = (() => {
     }
     wrap.innerHTML = groups.map(item => `
       <div class="tv-compare-item">
-        <strong>${TV.escapeHtml(item.group || '(missing group)')}</strong>
-        <span>rows: ${Number(item.rows || 0).toLocaleString()} | rows with missing: ${Number(item.rows_with_missing || 0).toLocaleString()} (${item.missing_row_pct || 0}%) | missing cells: ${Number(item.missing_cells || 0).toLocaleString()}</span>
+        <strong>${TV.escapeHtml(scalarValue(item.group) || '(missing group)')}</strong>
+        <span>rows: ${Number(item.rows || 0).toLocaleString()} | rows with missing: ${Number(item.rows_with_missing || 0).toLocaleString()} (${item.missing_row_pct || 0}%) | missing cells: ${Number(item.missing_cells || 0).toLocaleString()} (${item.missing_cell_pct || 0}% of visible cells)</span>
       </div>
     `).join('');
   }
@@ -173,16 +251,25 @@ const TVMISSING = (() => {
       const res = await TV.api('missing_summary', { group_by: groupBy() || null });
       result = res;
       renderOverview();
+      renderHighlights();
       renderColumns();
       renderGroups();
       const preview = document.getElementById('missing-preview');
       if (preview) preview.textContent = res.code || 'missing_report <- tv_missing_summary(DT)';
-      setStatus(`${Number(res.overview.rows_with_missing || 0).toLocaleString()} rows contain missing values across ${Number(res.overview.columns_with_missing || 0).toLocaleString()} column(s).`);
+      const topName = res?.highlights?.top_missing_columns?.[0]?.name;
+      const topPct = res?.highlights?.top_missing_columns?.[0]?.missing_pct;
+      setStatus(
+        topName
+          ? `${Number(res.overview.rows_with_missing || 0).toLocaleString()} rows contain missing values across ${Number(res.overview.columns_with_missing || 0).toLocaleString()} column(s). Start with ${topName} (${topPct || 0}% missing).`
+          : `${Number(res.overview.rows_with_missing || 0).toLocaleString()} rows contain missing values across ${Number(res.overview.columns_with_missing || 0).toLocaleString()} column(s).`
+      );
     } catch (e) {
       result = null;
       setStatus(e.message);
       const preview = document.getElementById('missing-preview');
       if (preview) preview.textContent = '# missing-data summary unavailable';
+      const hi = document.getElementById('missing-highlights');
+      if (hi) hi.innerHTML = '';
       renderOverview();
       renderColumns();
       renderGroups();

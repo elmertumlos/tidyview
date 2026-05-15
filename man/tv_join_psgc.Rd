@@ -15,6 +15,8 @@ tv_join_psgc(
   province_col = NULL,
   city_mun_col = NULL,
   barangay_col = NULL,
+  name_col = NULL,
+  keep_helper_cols = FALSE,
   as = deparse(substitute(data))
 )
 }
@@ -22,7 +24,7 @@ tv_join_psgc(
 \item{data}{A data frame or data.table.}
 
 \item{area_code}{Existing area-code column. If \code{NULL}, tidyview builds one
-from \code{region_col}, \code{province_col}, \code{city_mun_col}, and \code{barangay_col}.}
+from the PSGC component columns needed for the selected \code{level}.}
 
 \item{level}{PSGC level to retrieve.}
 
@@ -39,6 +41,11 @@ from \code{region_col}, \code{province_col}, \code{city_mun_col}, and \code{bara
 \item{city_mun_col}{City/municipality-code column.}
 
 \item{barangay_col}{Barangay-code column.}
+
+\item{name_col}{Optional output name for the joined PSGC area-name column.}
+
+\item{keep_helper_cols}{Keep helper PSGC columns such as the normalized
+joined \code{area_code} and \code{area_code_old}. Defaults to \code{FALSE}.}
 
 \item{as}{Name to use in generated code.}
 }

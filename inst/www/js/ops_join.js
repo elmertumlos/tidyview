@@ -33,10 +33,16 @@ TV.panels.join = function(pane) {
       <div class="tv-field">
         <label class="tv-field-label">table to bring in from the R environment</label>
         <select class="tv-select" id="join-right" onchange="TVJOIN.updatePreview()">${tblOpts}</select>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-top:6px;line-height:1.5">
+          Choose the lookup or reference table that has columns you want to add to the current table.
+        </div>
       </div>
 
       <div class="tv-field">
         <label class="tv-field-label">how should tidyview keep rows?</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          This choice decides whether unmatched rows are dropped, kept, or added from the other table.
+        </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px" id="join-type-grid">
           <button class="tv-chip selected" id="jt-inner" onclick="TVJOIN.setType('inner')">keep only matching rows</button>
           <button class="tv-chip" id="jt-left" onclick="TVJOIN.setType('left')">keep all current rows</button>
@@ -54,6 +60,9 @@ TV.panels.join = function(pane) {
         <label class="tv-field-label">columns that identify the same row in both tables</label>
         <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
           Add the column names that should match between the current table and the table you selected above.
+        </div>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          If a key repeats in either table, one row can match many rows and the result may expand.
         </div>
         <div id="key-rows" style="margin-bottom:8px"></div>
         <button class="tv-add-btn" id="add-key-btn">
@@ -135,10 +144,54 @@ const TVJOIN = (() => {
     return messages[type] || 'match rows between both tables';
   }
 
-  function previewWarningText(res) {
+  function countLabel(n, singular, plural = singular + 's') {
+    return `${n.toLocaleString()} ${n === 1 ? singular : plural}`;
+  }
+
+  function joinPreviewSummary(res, right, keys) {
+    const base = `This will ${joinTypeFriendlyLabel(joinType)} by matching ${keys.join(', ')} between "${TV.state.name || 'current table'}" and "${right}".`;
+    const matchedKeys = Number(res?.matched_keys || 0);
+    const onlyLeftKeys = Number(res?.only_left_keys || 0);
+    const onlyRightKeys = Number(res?.only_right_keys || 0);
+    if (!matchedKeys && !onlyLeftKeys && !onlyRightKeys) {
+      return base;
+    }
+    return `${base} Preview found ${countLabel(matchedKeys, 'matching key')}, ${countLabel(onlyLeftKeys, 'key')} only in the current table, and ${countLabel(onlyRightKeys, 'key')} only in "${right}".`;
+  }
+
+  function previewWarningText(res, right) {
     const beforeRows = Number(res?.before_nrow || 0);
     const afterRows = Number(res?.after_nrow || 0);
     const warnings = [joinTypeWarning(joinType)];
+    const matchedKeys = Number(res?.matched_keys || 0);
+    const onlyLeftKeys = Number(res?.only_left_keys || 0);
+    const onlyRightKeys = Number(res?.only_right_keys || 0);
+    const duplicateLeft = Number(res?.duplicate_keys_left || 0);
+    const duplicateRight = Number(res?.duplicate_keys_right || 0);
+    const manyToMany = Boolean(res?.many_to_many);
+
+    if (matchedKeys === 0) {
+      warnings.push('Preview found no matching keys yet, so this join will not line rows up until the key values overlap.');
+    }
+    if (onlyLeftKeys > 0) {
+      if (['left', 'full'].includes(joinType)) {
+        warnings.push(`${countLabel(onlyLeftKeys, 'key')} in the current table do not match "${right}", so added columns will be missing for those rows.`);
+      } else if (joinType === 'anti') {
+        warnings.push(`${countLabel(onlyLeftKeys, 'key')} only exist in the current table, so those unmatched rows are the ones this anti join will keep.`);
+      } else if (['inner', 'semi', 'right'].includes(joinType)) {
+        warnings.push(`${countLabel(onlyLeftKeys, 'key')} only exist in the current table, so some current rows will be excluded or treated as unmatched.`);
+      }
+    }
+    if (onlyRightKeys > 0 && ['right', 'full'].includes(joinType)) {
+      warnings.push(`${countLabel(onlyRightKeys, 'key')} only exist in "${right}", so new rows may come from the other table.`);
+    }
+    if (manyToMany && !['semi', 'anti'].includes(joinType)) {
+      warnings.push('Both tables repeat some join keys, so this is behaving like a many-to-many join and can multiply rows quickly.');
+    } else if (duplicateRight > 0 && ['inner', 'left', 'full'].includes(joinType)) {
+      warnings.push(`${countLabel(duplicateRight, 'duplicate key row')} on "${right}" can expand matching current rows.`);
+    } else if (duplicateLeft > 0 && ['inner', 'right', 'full'].includes(joinType)) {
+      warnings.push(`${countLabel(duplicateLeft, 'duplicate key row')} in the current table will repeat any matching values from "${right}".`);
+    }
     if (afterRows > beforeRows) {
       warnings.push('Preview shows row expansion, which usually means the join keys are duplicated in the other table.');
     } else if (afterRows < beforeRows && ['inner', 'right', 'semi', 'anti'].includes(joinType)) {
@@ -249,7 +302,8 @@ const TVJOIN = (() => {
         if (seq !== previewSeq) return;
         latestPreview = res;
         impact.textContent = TV.formatImpactSummary(res, 'join');
-        if (warning) warning.textContent = previewWarningText(res);
+        if (friendlySummary) friendlySummary.textContent = joinPreviewSummary(res, right, keys);
+        if (warning) warning.textContent = previewWarningText(res, right);
       })
       .catch(e => {
         if (seq !== previewSeq) return;

@@ -30,6 +30,10 @@ TV.panels.filter = function(pane) {
         column, operator, and value — the generated R expression updates live below.
       </div>
 
+      <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:10px;line-height:1.5">
+        Start with one condition, then add more only if you need to narrow or widen the result.
+      </div>
+
       <div id="cond-rows"></div>
 
       <button class="tv-add-btn" id="add-cond-btn">
@@ -41,6 +45,9 @@ TV.panels.filter = function(pane) {
 
       <div style="margin-top:16px;padding:12px 14px;background:var(--md-surface-variant);border-radius:var(--tv-radius-sm)">
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:6px;font-weight:500">combine conditions with</div>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Use <code>AND</code> when every condition must match. Use <code>OR</code> when any one condition is enough.
+        </div>
         <div style="display:flex;gap:8px">
           <button class="tv-chip selected" id="logic-AND" onclick="TVFILTER.setLogic('AND')">AND — all must match</button>
           <button class="tv-chip" id="logic-OR"  onclick="TVFILTER.setLogic('OR')">OR — any can match</button>

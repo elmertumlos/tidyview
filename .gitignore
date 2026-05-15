@@ -5,6 +5,10 @@
 .claude/
 .tidyview-cache/
 notes/
+!notes/
+notes/*
+!notes/NEXT_STEPS.md
+!notes/ROADMAP_V0.2.0.md
 *.Rcheck/
 *.tar.gz
 .tmp*
@@ -12,3 +16,4 @@ notes/
 node_modules/
 .DS_Store
 Thumbs.db
+cbms_*.rds

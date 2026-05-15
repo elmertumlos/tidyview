@@ -42,7 +42,7 @@ TV.panels.recode = function(pane) {
 
       <div class="tv-field">
         <label class="tv-field-label">where to save the result</label>
-        <div style="display:flex;gap:8px;align-items:center">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <button class="tv-chip selected" id="recode-same-btn" onclick="TVRECODE.setTarget('same')">replace this column</button>
           <button class="tv-chip" id="recode-new-btn" onclick="TVRECODE.setTarget('new')">create a new column</button>
         </div>
@@ -59,9 +59,18 @@ TV.panels.recode = function(pane) {
       </div>
 
       <div class="tv-field" id="recode-mapping-section">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:6px;font-weight:500">quick cleanup recipes</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+          <button type="button" class="tv-chip" onclick="TVRECODE.applyRecipe('yesno')">yes / no cleanup</button>
+          <button type="button" class="tv-chip" onclick="TVRECODE.applyRecipe('missing_text')">missing text -&gt; Missing</button>
+          <button type="button" class="tv-chip" onclick="TVRECODE.applyRecipe('title')">Title Case labels</button>
+          <button type="button" class="tv-chip" onclick="TVRECODE.applyRecipe('upper')">UPPER CASE labels</button>
+          <button type="button" class="tv-chip" onclick="TVRECODE.applyRecipe('lower')">lower case labels</button>
+          <button type="button" class="tv-chip" onclick="TVRECODE.applyRecipe('collapse_spaces')">collapse spaces</button>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
           <label class="tv-field-label" style="margin:0">change these values</label>
-          <div style="display:flex;gap:8px;align-items:center">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <span id="recode-loading" style="font-size:10px;color:var(--md-on-surface-variant)"></span>
             <button id="recode-mode-btn" onclick="TVRECODE.toggleMode()"
               style="font-size:10px;padding:3px 8px;border-radius:12px;border:1px solid var(--md-outline-variant);background:transparent;cursor:pointer;color:var(--md-primary)">
@@ -146,6 +155,9 @@ const TVRECODE = (() => {
   let bulkMode = false;
   let mode = 'map';
   let availableValues = [];
+  const MISSING_TEXT_VALUES = new Set(['na', 'n/a', 'n.a.', 'null', 'none', 'unknown', 'missing']);
+  const YES_VALUES = new Set(['y', 'yes', 'true', '1', 't']);
+  const NO_VALUES = new Set(['n', 'no', 'false', '0', 'f']);
 
   function init() {
     rows = [];
@@ -235,6 +247,117 @@ const TVRECODE = (() => {
       .filter(m => m.from !== '');
   }
 
+  function normalizedValue(value) {
+    return String(value ?? '').trim().toLowerCase();
+  }
+
+  function titleCaseValue(value) {
+    return String(value ?? '')
+      .toLowerCase()
+      .replace(/\b([a-z])/g, function(match) { return match.toUpperCase(); });
+  }
+
+  function collapseSpacesValue(value) {
+    return String(value ?? '').replace(/\s+/g, ' ').trim();
+  }
+
+  function normalizeAvailableStrings() {
+    return (availableValues || [])
+      .filter(value => value !== null && value !== undefined)
+      .map(value => String(value));
+  }
+
+  function setRowsFromMapping(mapping) {
+    rows = [];
+    const container = document.getElementById('recode-rows');
+    if (container) container.innerHTML = '';
+    (mapping || []).forEach(m => addRow(m.from, m.to));
+    const bulkText = document.getElementById('recode-bulk-text');
+    if (bulkText) {
+      bulkText.value = (mapping || []).map(m => `${m.from}\t${m.to}`).join('\n');
+    }
+  }
+
+  function groupMappings(mapping) {
+    const grouped = new Map();
+    (mapping || []).forEach(m => {
+      const targetValue = String(m.to ?? '');
+      if (!grouped.has(targetValue)) grouped.set(targetValue, []);
+      grouped.get(targetValue).push(String(m.from ?? ''));
+    });
+    return grouped;
+  }
+
+  function groupedTargetSummaries(mapping, limit = 2) {
+    return Array.from(groupMappings(mapping).entries())
+      .filter(([, sources]) => sources.length > 1)
+      .slice(0, limit)
+      .map(([targetValue, sources]) => {
+        const shown = sources.slice(0, 3).map(v => `"${v}"`).join(', ');
+        const more = sources.length > 3 ? ` and ${sources.length - 3} more` : '';
+        return `"${targetValue}" will combine ${shown}${more}.`;
+      });
+  }
+
+  function buildRecipeMapping(recipe) {
+    const values = normalizeAvailableStrings();
+    if (!values.length) return [];
+    if (recipe === 'yesno') {
+      return values.flatMap(value => {
+        const norm = normalizedValue(value);
+        if (YES_VALUES.has(norm) && value !== 'Yes') return [{ from: value, to: 'Yes' }];
+        if (NO_VALUES.has(norm) && value !== 'No') return [{ from: value, to: 'No' }];
+        return [];
+      });
+    }
+    if (recipe === 'missing_text') {
+      return values.flatMap(value => {
+        const norm = normalizedValue(value);
+        if ((norm === '' || MISSING_TEXT_VALUES.has(norm)) && value !== 'Missing') {
+          return [{ from: value, to: 'Missing' }];
+        }
+        return [];
+      });
+    }
+    if (recipe === 'title') {
+      return values.flatMap(value => {
+        const next = titleCaseValue(value);
+        return next !== value ? [{ from: value, to: next }] : [];
+      });
+    }
+    if (recipe === 'upper') {
+      return values.flatMap(value => {
+        const next = String(value).toUpperCase();
+        return next !== value ? [{ from: value, to: next }] : [];
+      });
+    }
+    if (recipe === 'lower') {
+      return values.flatMap(value => {
+        const next = String(value).toLowerCase();
+        return next !== value ? [{ from: value, to: next }] : [];
+      });
+    }
+    if (recipe === 'collapse_spaces') {
+      return values.flatMap(value => {
+        const next = collapseSpacesValue(value);
+        return next !== value ? [{ from: value, to: next }] : [];
+      });
+    }
+    return [];
+  }
+
+  function applyRecipe(recipe) {
+    setMode('map');
+    const mapping = buildRecipeMapping(recipe);
+    if (!mapping.length) {
+      TV.showToast('No values need that cleanup right now.');
+      updatePreview();
+      return;
+    }
+    setRowsFromMapping(mapping);
+    updatePreview();
+  }
+
   async function loadValues() {
     const col = document.getElementById('recode-col')?.value;
     if (!col) return;
@@ -266,17 +389,25 @@ const TVRECODE = (() => {
     if (!container) return;
     const div = document.createElement('div');
     div.id = 'recode-row-' + id;
-    div.style.cssText = 'display:grid;grid-template-columns:1fr 16px 1fr 28px;gap:6px;align-items:center;margin-bottom:6px';
+    div.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-bottom:8px;padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm);background:var(--md-surface)';
     div.innerHTML = `
-      <input class="tv-input" id="rr-from-${id}" value="${escapeHtmlAttr(fromVal)}"
-        placeholder="original" style="padding:6px 8px;font:var(--tv-type-mono);font-size:11px"
-        oninput="TVRECODE.updatePreview()">
-      <span style="text-align:center;color:var(--md-on-surface-variant);font-size:11px">-></span>
-      <input class="tv-input" id="rr-to-${id}" value="${escapeHtmlAttr(toVal)}"
-        placeholder="new label" style="padding:6px 8px;font-size:12px"
-        oninput="TVRECODE.updatePreview()">
-      <button onclick="TVRECODE.removeRow('${id}')"
-        style="width:24px;height:24px;border-radius:50%;border:none;background:transparent;color:var(--md-on-surface-variant);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center">x</button>`;
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);font-weight:500">value change</div>
+        <button onclick="TVRECODE.removeRow('${id}')"
+          style="width:24px;height:24px;border-radius:50%;border:none;background:transparent;color:var(--md-on-surface-variant);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0">x</button>
+      </div>
+      <div>
+        <label class="tv-field-label" style="margin-bottom:4px">current value</label>
+        <input class="tv-input" id="rr-from-${id}" value="${escapeHtmlAttr(fromVal)}"
+          placeholder="original" style="padding:6px 8px;font:var(--tv-type-mono);font-size:11px"
+          oninput="TVRECODE.updatePreview()">
+      </div>
+      <div>
+        <label class="tv-field-label" style="margin-bottom:4px">change to</label>
+        <input class="tv-input" id="rr-to-${id}" value="${escapeHtmlAttr(toVal)}"
+          placeholder="new label" style="padding:6px 8px;font-size:12px"
+          oninput="TVRECODE.updatePreview()">
+      </div>`;
     container.appendChild(div);
   }
 
@@ -400,8 +531,10 @@ const TVRECODE = (() => {
         : `This will create "${tgt}" from "${col}".`);
       const unchangedCount = Math.max(0, (availableValues || []).length - new Set(mapping.map(m => String(m.from ?? ''))).size);
       warningParts.push('Any value you do not list will stay exactly as it is.');
+      const groupedSummaries = groupedTargetSummaries(mapping);
       if (uniqueTargetCount(mapping) < mapping.length) {
         warningParts.push('Some original values will be grouped into the same new label.');
+        warningParts = warningParts.concat(groupedSummaries);
       }
       if (friendlySummary) {
         const mappedCount = mapping.length;
@@ -412,7 +545,7 @@ const TVRECODE = (() => {
           ? ` ${formatCountLabel(unchangedCount, 'other value', 'other values')} will stay unchanged.`
           : ' Every available value is covered by your list.';
         const groupText = uniqueTargetCount(mapping) < mapping.length
-          ? ' Some values will be grouped into the same result label.'
+          ? ` Some values will be grouped into the same result label.${groupedSummaries.length ? ` ${groupedSummaries.join(' ')}` : ''}`
           : '';
         const storageText = ` The result will be saved as ${outputTypeLabel()}.`;
         friendlySummary.textContent = `${actionText}${keepText}${groupText}${storageText}`;
@@ -494,5 +627,5 @@ const TVRECODE = (() => {
     }
   }
 
-  return { init, setMode, setFactor, setTarget, toggleMode, loadValues, addRow, removeRow, updatePreview, apply };
+  return { init, setMode, setFactor, setTarget, toggleMode, loadValues, addRow, removeRow, updatePreview, apply, applyRecipe };
 })();

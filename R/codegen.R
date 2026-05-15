@@ -4,6 +4,7 @@
 #' the browser) and returns a character string of valid R code, plus
 #' executes the operation against the state's data.table.
 
+#' @noRd
 .ensure_state_dt <- function(state) {
   if (is.null(state$dt)) return(invisible(NULL))
   if (!data.table::is.data.table(state$dt)) {
@@ -400,6 +401,8 @@
     province_col = params$province_col %||% NULL,
     city_mun_col = params$city_mun_col %||% NULL,
     barangay_col = params$barangay_col %||% NULL,
+    name_col = params$name_col %||% NULL,
+    keep_helper_cols = isTRUE(params$keep_helper_cols),
     as = state$name
   )
   code_dt <- attr(out, "tv_code") %||% "# PSGC join"
@@ -418,38 +421,97 @@
 .op_reshape <- function(params, state) {
   .ensure_state_dt(state)
   direction <- params$direction
+  if (!direction %in% c("longer", "wider")) {
+    stop("Unsupported reshape direction: ", direction)
+  }
 
   .snapshot_state(state)
   if (direction == "longer") {
-    id_vars      <- as.character(unlist(params$id_vars))
-    measure_vars <- as.character(unlist(params$measure_vars))
-    var_name     <- params$var_name  %||% "variable"
-    val_name     <- params$val_name  %||% "value"
+    id_vars      <- unique(as.character(unlist(params$id_vars %||% character(0))))
+    measure_vars <- unique(as.character(unlist(params$measure_vars %||% character(0))))
+    var_name     <- trimws(params$var_name  %||% "variable")
+    val_name     <- trimws(params$val_name  %||% "value")
+    existing_names <- names(state$dt)
+    missing_id <- setdiff(id_vars, existing_names)
+    missing_measure <- setdiff(measure_vars, existing_names)
+
+    if (length(missing_id)) {
+      stop("id column(s) not found: ", paste(missing_id, collapse = ", "))
+    }
+    if (length(missing_measure)) {
+      stop("measure column(s) not found: ", paste(missing_measure, collapse = ", "))
+    }
+    if (!length(measure_vars)) {
+      stop("Choose one or more measure columns for pivot_longer.")
+    }
+    overlap <- intersect(id_vars, measure_vars)
+    if (length(overlap)) {
+      stop("id and measure columns must be different: ", paste(overlap, collapse = ", "))
+    }
+    if (!nzchar(var_name) || !nzchar(val_name)) {
+      stop("Provide both a variable column name and a value column name.")
+    }
+    if (identical(var_name, val_name)) {
+      stop("The variable column name and value column name must be different.")
+    }
+    retained_names <- setdiff(existing_names, measure_vars)
+    clashing_names <- intersect(c(var_name, val_name), retained_names)
+    if (length(clashing_names)) {
+      stop(
+        "Output column name(s) would duplicate retained column(s): ",
+        paste(clashing_names, collapse = ", "),
+        ". Choose different names."
+      )
+    }
 
     id_str  <- .code_chr_vec(id_vars)
     msr_str <- .code_chr_vec(measure_vars)
     code_dt <- sprintf(
-      '%s <- melt(%s, id.vars = c(%s), measure.vars = c(%s), variable.name = "%s", value.name = "%s")',
+      '%s <- data.table::melt(%s, id.vars = c(%s), measure.vars = c(%s), variable.name = "%s", value.name = "%s", variable.factor = FALSE)',
       .code_name(state$name), .code_name(state$name), id_str, msr_str, var_name, val_name)
     state$dt <- data.table::melt(state$dt,
-                                  id.vars       = id_vars,
-                                  measure.vars  = measure_vars,
-                                  variable.name = var_name,
-                                  value.name    = val_name)
+      id.vars = id_vars,
+      measure.vars = measure_vars,
+      variable.name = var_name,
+      value.name = val_name,
+      variable.factor = FALSE
+    )
   } else {
-    formula_str <- params$formula
-    value_var   <- params$value_var
+    formula_str <- trimws(params$formula %||% "")
+    value_var   <- trimws(params$value_var %||% "")
+    if (!nzchar(formula_str)) {
+      stop("Enter a row formula for pivot_wider, like region ~ variable.")
+    }
+    if (!nzchar(value_var)) {
+      stop("Choose the value column to spread in pivot_wider.")
+    }
+    if (!value_var %in% names(state$dt)) {
+      stop("Value column '", value_var, "' not found.")
+    }
+    formula_obj <- tryCatch(stats::as.formula(formula_str), error = function(e) {
+      stop("Invalid pivot_wider formula: ", conditionMessage(e))
+    })
+    formula_vars <- all.vars(formula_obj)
+    missing_formula_cols <- setdiff(formula_vars, names(state$dt))
+    if (length(missing_formula_cols)) {
+      stop("Formula column(s) not found: ", paste(missing_formula_cols, collapse = ", "))
+    }
+    if (value_var %in% formula_vars) {
+      stop("The value column cannot also appear in the pivot_wider formula.")
+    }
     code_dt <- sprintf(
-      '%s <- dcast(%s, %s, value.var = "%s")',
+      '%s <- data.table::dcast(%s, %s, value.var = "%s")',
       .code_name(state$name), .code_name(state$name), formula_str, value_var)
     state$dt <- data.table::dcast(state$dt,
-                                   as.formula(formula_str),
-                                   value.var = value_var)
+      formula_obj,
+      value.var = value_var
+    )
   }
 
   .push_history(state, code_dt)
   list(code = code_dt, columns = .dt_column_meta(state$dt),
-       nrow = nrow(state$dt))
+       nrow = nrow(state$dt),
+       ncol = ncol(state$dt))
 }
 
 
@@ -577,10 +639,10 @@
   .snapshot_state(state)
   if (type == "head") {
     code_dt <- sprintf("%s <- head(%s, %d)", .code_name(state$name), .code_name(state$name), n)
-    state$dt <- head(state$dt, n)
+    state$dt <- utils::head(state$dt, n)
   } else if (type == "tail") {
     code_dt <- sprintf("%s <- tail(%s, %d)", .code_name(state$name), .code_name(state$name), n)
-    state$dt <- tail(state$dt, n)
+    state$dt <- utils::tail(state$dt, n)
   } else {
     code_dt <- sprintf("%s <- %s[sample(.N, min(%d, .N))]", .code_name(state$name), .code_name(state$name), n)
     state$dt <- state$dt[sample(.N, min(n, .N))]
@@ -798,7 +860,7 @@
 
   result <- data.table::dcast(
     long,
-    as.formula(sprintf("%s ~ %s", row_var, col_var)),
+    stats::as.formula(sprintf("%s ~ %s", row_var, col_var)),
     value.var = value_var,
     fill = 0
   )
@@ -1229,11 +1291,17 @@
   fn <- agg$fn
   output <- agg$output
   col <- agg$col
+  na_rm <- isTRUE(agg$na_rm)
+  supports_na_rm <- fn %in% c("sum", "mean", "median", "min", "max", "sd", "var")
 
   switch(fn,
     n = sprintf("%s = .N", .code_name(output)),
     n_distinct = sprintf("%s = data.table::uniqueN(%s)", .code_name(output), .code_name(col)),
-    sprintf("%s = %s(%s)", .code_name(output), fn, .code_name(col))
+    if (supports_na_rm && na_rm) {
+      sprintf("%s = %s(%s, na.rm = TRUE)", .code_name(output), fn, .code_name(col))
+    } else {
+      sprintf("%s = %s(%s)", .code_name(output), fn, .code_name(col))
+    }
   )
 }
 
@@ -1245,7 +1313,9 @@
   wide[, Total := rowSums(.SD, na.rm = TRUE), .SDcols = measure_cols]
 
   totals <- lapply(wide[, c(measure_cols, "Total"), with = FALSE], sum, na.rm = TRUE)
-  total_row <- data.table::as.data.table(c(setNames(list("Total"), id_col), totals))
+  total_row_values <- c(list("Total"), totals)
+  names(total_row_values)[1] <- id_col
+  total_row <- data.table::as.data.table(total_row_values)
   data.table::rbindlist(list(wide, total_row), fill = TRUE)
 }
 
@@ -1254,7 +1324,9 @@
   paste(
     sprintf('..tv_measure_cols <- setdiff(names(%s), "%s")', output_name, row_var),
     sprintf('%s[, Total := rowSums(.SD, na.rm = TRUE), .SDcols = ..tv_measure_cols]', output_name),
-    sprintf('..tv_total_row <- data.table::as.data.table(c(setNames(list("Total"), "%s"), lapply(%s[, c(..tv_measure_cols, "Total"), with = FALSE], sum, na.rm = TRUE)))', row_var, output_name),
+    sprintf('..tv_total_row_values <- c(list("Total"), lapply(%s[, c(..tv_measure_cols, "Total"), with = FALSE], sum, na.rm = TRUE))', output_name),
+    sprintf('names(..tv_total_row_values)[1] <- "%s"', row_var),
+    '..tv_total_row <- data.table::as.data.table(..tv_total_row_values)',
     sprintf('%s <- data.table::rbindlist(list(%s, ..tv_total_row), fill = TRUE)', output_name, output_name),
     sep = "\n"
   )

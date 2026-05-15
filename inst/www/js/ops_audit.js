@@ -26,6 +26,9 @@ TV.panels.audit = function(pane) {
 
       <div class="tv-field">
         <label class="tv-field-label">top values to show per column</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Choose how many frequent values or examples to show in each column summary card.
+        </div>
         <div style="display:flex;gap:8px;align-items:center">
           <select class="tv-select" id="audit-top-n" style="max-width:110px" onchange="TVAUDIT.load()">
             <option value="3">3</option>
@@ -40,8 +43,16 @@ TV.panels.audit = function(pane) {
 
       <div id="audit-overview" class="tv-audit-grid"></div>
 
+      <div class="tv-compare-section">
+        <div class="tv-compare-title">attention first</div>
+        <div id="audit-highlights" class="tv-compare-list"></div>
+      </div>
+
       <div class="tv-field" style="margin-top:14px">
         <label class="tv-field-label">find a column in the audit</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Search the audit display by column name without changing the underlying data.
+        </div>
         <input class="tv-input" id="audit-search" placeholder="search column names..." oninput="TVAUDIT.renderColumns()">
       </div>
 
@@ -65,6 +76,21 @@ TV.panels.audit = function(pane) {
 
 const TVAUDIT = (() => {
   let result = null;
+
+  function listValues(value) {
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === 'object') return Object.values(value);
+    return [];
+  }
+
+  function scalarValue(value) {
+    if (value == null) return '';
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+    const vals = listValues(value).filter(v => v != null && v !== '');
+    return vals.length ? String(vals[0]) : '';
+  }
 
   function formatNumber(value) {
     return Number(value || 0).toLocaleString();
@@ -94,6 +120,7 @@ const TVAUDIT = (() => {
       ['rows', formatNumber(overview.nrow)],
       ['columns', formatNumber(overview.ncol)],
       ['rows with missing', formatNumber(overview.rows_with_missing)],
+      ['columns with missing', formatNumber(overview.columns_with_missing)],
       ['duplicate rows', formatNumber(overview.duplicate_rows)],
       ['missing cells', `${formatNumber(overview.missing_cells)} (${overview.missing_pct || 0}%)`],
       ['constant columns', formatNumber(overview.constant_columns)],
@@ -110,11 +137,63 @@ const TVAUDIT = (() => {
       </div>`;
   }
 
+  function renderHighlights() {
+    const wrap = document.getElementById('audit-highlights');
+    if (!wrap) return;
+    const highlights = result?.highlights || {};
+    const topMissing = Array.isArray(highlights.top_missing_columns) ? highlights.top_missing_columns : [];
+    const constants = Array.isArray(highlights.constant_columns) ? highlights.constant_columns : [];
+    const allMissing = Array.isArray(highlights.all_missing_columns) ? highlights.all_missing_columns : [];
+    const items = [];
+
+    if (topMissing.length) {
+      items.push(`
+        <div class="tv-compare-item">
+          <strong>columns with the most missing values</strong>
+          <span>${topMissing.map(col =>
+            `${TV.escapeHtml(col.name)} (${formatNumber(col.missing_n)}; ${TV.escapeHtml(String(col.missing_pct || 0))}%)`
+          ).join(' | ')}</span>
+        </div>`);
+    }
+
+    if (allMissing.length) {
+      items.push(`
+        <div class="tv-compare-item">
+          <strong>completely empty columns</strong>
+          <span>${allMissing.map(col => TV.escapeHtml(col.name)).join(' | ')}</span>
+        </div>`);
+    }
+
+    const stableConstants = constants.filter(col => !allMissing.some(empty => empty.name === col.name));
+    if (stableConstants.length) {
+      items.push(`
+        <div class="tv-compare-item">
+          <strong>constant columns</strong>
+          <span>${stableConstants.map(col => TV.escapeHtml(col.name)).join(' | ')}</span>
+        </div>`);
+    }
+
+    if (!items.length) {
+      wrap.innerHTML = '<div class="tv-audit-empty">No obvious audit risks were found. Search below if you want to inspect specific columns.</div>';
+      return;
+    }
+
+    wrap.innerHTML = items.join('');
+  }
+
   function renderColumns() {
     const wrap = document.getElementById('audit-columns');
     if (!wrap) return;
     const query = String(document.getElementById('audit-search')?.value || '').trim().toLowerCase();
-    const columns = (result?.columns || []).filter(col =>
+    const columns = (result?.columns || []).slice().sort((a, b) => {
+      const missDiff = Number(b?.missing_n || 0) - Number(a?.missing_n || 0);
+      if (missDiff !== 0) return missDiff;
+      const missPctDiff = Number(b?.missing_pct || 0) - Number(a?.missing_pct || 0);
+      if (missPctDiff !== 0) return missPctDiff;
+      const constDiff = Number(!!b?.constant) - Number(!!a?.constant);
+      if (constDiff !== 0) return constDiff;
+      return String(a?.name || '').localeCompare(String(b?.name || ''));
+    }).filter(col =>
       !query || String(col.name || '').toLowerCase().includes(query)
     );
 
@@ -124,12 +203,24 @@ const TVAUDIT = (() => {
     }
 
     wrap.innerHTML = columns.map(col => {
-      const sample = Array.isArray(col.sample) ? col.sample.filter(Boolean).join(', ') : '';
-      const tops = Array.isArray(col.top_values) ? col.top_values.join('; ') : '';
+      const sample = listValues(col.sample).filter(Boolean).join(', ');
+      const tops = listValues(col.top_values).filter(Boolean).join('; ');
       const summary = col.summary || tops || sample || 'No non-missing values';
-      const label = col.label ? `<div class="tv-audit-col-label">${TV.escapeHtml(col.label)}</div>` : '';
-      const minmax = col.min || col.max ? `
-        <div class="tv-audit-col-meta">min: ${TV.escapeHtml(col.min || 'NA')} | max: ${TV.escapeHtml(col.max || 'NA')}</div>` : '';
+      const flags = [];
+      if (Number(col.missing_n || 0) >= Number(result?.overview?.nrow || 0) && Number(result?.overview?.nrow || 0) > 0) {
+        flags.push('all values missing');
+      } else if (Number(col.missing_pct || 0) >= 50) {
+        flags.push('high missing');
+      } else if (Number(col.missing_n || 0) > 0) {
+        flags.push('some missing');
+      }
+      if (col.constant) flags.push('constant');
+      const labelText = scalarValue(col.label);
+      const minText = scalarValue(col.min);
+      const maxText = scalarValue(col.max);
+      const label = labelText ? `<div class="tv-audit-col-label">${TV.escapeHtml(labelText)}</div>` : '';
+      const minmax = (minText || maxText) ? `
+        <div class="tv-audit-col-meta">min: ${TV.escapeHtml(minText || 'NA')} | max: ${TV.escapeHtml(maxText || 'NA')}</div>` : '';
       return `
         <div class="tv-audit-col">
           <div class="tv-audit-col-head">
@@ -144,6 +235,12 @@ const TVAUDIT = (() => {
             <span>distinct: ${formatNumber(col.distinct_n)}</span>
             <span>${col.constant ? 'constant' : 'varied'}</span>
           </div>
+          ${Number(col.missing_n || 0) > 0 ? `
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+              <button class="tv-chip" type="button" onclick='TV.openPanelForColumns("fill_na", ${JSON.stringify([col.name])})'>replace missing values</button>
+              <button class="tv-chip" type="button" onclick='TV.openPanelForColumns("drop_na", ${JSON.stringify([col.name])})'>drop rows missing here</button>
+            </div>` : ''}
+          ${flags.length ? `<div class="tv-audit-col-meta">${TV.escapeHtml(flags.join(' | '))}</div>` : ''}
           <div class="tv-audit-col-summary">${TV.escapeHtml(summary)}</div>
           ${sample ? `<div class="tv-audit-col-meta">sample: ${TV.escapeHtml(sample)}</div>` : ''}
           ${minmax}
@@ -159,6 +256,7 @@ const TVAUDIT = (() => {
       const preview = document.getElementById('audit-preview');
       if (preview) preview.textContent = res.code || 'audit_report <- tv_audit(DT)';
       renderOverview();
+      renderHighlights();
       renderColumns();
       setStatus(`Audited ${formatNumber(res.overview?.nrow)} rows across ${formatNumber(res.overview?.ncol)} columns.`);
     } catch (e) {
@@ -166,6 +264,8 @@ const TVAUDIT = (() => {
       setStatus(e.message);
       const wrap = document.getElementById('audit-overview');
       if (wrap) wrap.innerHTML = '';
+      const hi = document.getElementById('audit-highlights');
+      if (hi) hi.innerHTML = '';
       const cols = document.getElementById('audit-columns');
       if (cols) cols.innerHTML = '<div class="tv-audit-empty">Audit could not be loaded.</div>';
       const preview = document.getElementById('audit-preview');

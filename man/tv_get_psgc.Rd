@@ -15,11 +15,14 @@ tv_get_psgc(
 )
 }
 \arguments{
-\item{...}{Filter expressions forwarded to \code{phscs::get_psgc()}.}
+\item{...}{Optional filter expressions evaluated against the bundled PSGC
+reference, such as \code{area_name == "Abra"} or \code{grepl("City", area_name)}.}
 
-\item{token}{Optional API token.}
+\item{token}{Ignored for the bundled PSGC snapshot. Present for API
+compatibility.}
 
-\item{version}{Optional PSGC version.}
+\item{version}{Ignored for the bundled PSGC snapshot. Present for API
+compatibility.}
 
 \item{level}{PSGC level.}
 

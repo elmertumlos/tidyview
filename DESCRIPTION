@@ -1,6 +1,6 @@
 Package: tidyview
 Title: Guided Data Workflow GUI with Paste-Ready R Code
-Version: 0.2.0
+Version: 0.3.0
 Authors@R: 
     person("Elmer", "Tumlos", role = c("aut", "cre"),
            email = "e.tumlos@psa.gov.ph")
@@ -36,6 +36,7 @@ Suggests:
     rcdf,
     tsg,
     phscs,
+    rstudioapi,
     writexl,
     tinytest,
     knitr,

@@ -29,9 +29,6 @@ file path.}
 \item{as}{Name to use for the RCDF object in generated code.}
 }
 \description{
-Read an RCDF file
-}
-\details{
-This helper requires the optional \code{rcdf} package. \code{tidyview} itself can
-run without \code{rcdf} installed; only RCDF import needs it.
+This helper requires the optional \code{rcdf} package. \code{tidyview} itself can run
+without \code{rcdf} installed; only RCDF import needs it.
 }

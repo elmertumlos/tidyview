@@ -1,353 +1,213 @@
 # tidyview
 
-**Guided data workflows with a tidyverse-style UI and paste-ready `data.table` code.**
+**A guided data workflow interface for R that stays transparent, teachable, and code-first.**
 
-`tidyview` helps you audit, review missing data, validate, filter, select, mutate, summarise, join, reshape, tabulate,
-plot, and export data without writing each step by hand. Every click generates valid,
-runnable R code in the script pane so the UI stays transparent and teachable.
+`tidyview` is a browser-based GUI for inspecting, cleaning, validating, reshaping, summarising, comparing, and exporting data. It is designed for analysts who want the speed and safety of a guided interface without losing access to the underlying R code.
 
-It is designed for analysts who want a safer, more guided workflow without hiding the code. Instead of forcing users to
-memorize R syntax, `tidyview` explains common tasks in plain language, previews the impact of destructive actions, and
-keeps the generated code visible for learning and reuse.
-
-## What's new in 0.2.0
-
-`tidyview 0.2.0` focuses on usability and safety.
-
-- core panels such as `mutate`, `filter`, `recode`, `join`, `drop_na`, and `separate / unite` now use clearer labels and more guided copy
-- destructive actions now show stronger warnings and impact summaries before apply
-- list-column datasets such as `dplyr::starwars` are now stable in workflows that previously failed, including `mutate` and `drop_na`
-- the code pane remains transparent and paste-ready, but the surrounding UI is easier to follow for users who do not write R every day
-
-## Screenshots
-
-Recent updates have focused on making the core panels more guided for non-technical users. The current interface uses:
-
-- clearer labels such as `source column`, `result column`, and `separator text`
-- `What This Will Do` summaries before apply
-- stronger warnings before destructive steps like recode, join, and drop missing rows
-- stable support for list-column datasets such as `dplyr::starwars`
-
-### Startup
-
-![Startup](man/figures/startup.png)
-
-### Load Panel
-
-![Load panel](man/figures/load-panel.png)
-
-### Filter With Regex
-
-![Filter with regex](man/figures/filter-regex.png)
-
-### Mutate Helpers
-
-![Mutate helper](man/figures/mutate-helper.png)
-
-### Join
-
-![Join panel](man/figures/join-panel.png)
-
-### Audit And Compare
-
-![Audit panel](man/figures/audit-panel.png)
-
-![Compare panel](man/figures/compare-panel.png)
-
-### List-Column Data
-
-![Starwars table](man/figures/starwars-table.png)
-
-```r
-# install from GitHub
-remotes::install_github("elmertumlos/tidyview")
-
-# launch with data from the R environment
-tidygui(mtcars)
-
-# launch with a file
-tidygui(data.table::fread("sales.csv"), name = "sales")
-
-# just open the import dialog
-tidygui()
-```
-
-`tidygui()` opens the browser interface on `http://127.0.0.1:7474` by default and keeps the generated R code visible in the script pane as you work.
+Every interaction in `tidyview` generates runnable, paste-ready `data.table` code in a live script pane, so the interface helps users work faster while still making every transformation explicit.
 
 ## Why tidyview
 
-`tidyview` works well when you want to:
+`tidyview` is built for teams that need a practical middle ground between manual coding and opaque point-and-click tools.
 
-- explore and clean a dataset without writing every line from scratch
-- teach or learn `data.table` step by step from real generated code
-- give non-technical teammates a guided interface for common data tasks
-- inspect what will happen before applying a destructive change
+It works especially well when you want to:
 
-The app does not hide the transformation logic. Every operation still writes runnable R code into the script pane.
+- inspect a dataset before making changes
+- guide non-technical users through common data tasks
+- preview the effect of destructive operations before applying them
+- teach or learn `data.table` workflows from real generated code
+- standardise recurring cleaning and reporting steps across a team
 
-## Programmatic helpers
+Instead of hiding transformations, `tidyview` exposes them. The UI explains what each step does, and the code pane records it in a form you can reuse in scripts, reports, or production workflows.
 
-The GUI verbs are also available as lightweight helpers that return a
-`data.table` with the generated code stored in `attr(x, "tv_code")`.
+## What's New In 0.3.0
+
+`tidyview 0.3.0` strengthens the package as a guided workflow environment rather than a thin wrapper around individual verbs.
+
+Highlights include:
+
+- recipe-style helpers in `mutate` for common conversions, text cleanup, and date helpers
+- guided recode helpers for yes/no standardisation, label cleanup, and grouped recodes
+- stronger previews for `join`, `compare`, `separate`, `unite`, and `pivot`
+- safer `summarise` controls for missing values
+- validation templates for required fields, unique IDs, allowed values, ranges, and date checks
+- bundled PSGC lookup support for region, province, municipality, and barangay naming
+- better audit and missing-data workflows with clearer prioritisation
+- broader helper text across the major panels so the app reads more like a workflow than a raw function form
+
+## Install
+
+Install the latest development or release candidate version from GitHub:
+
+```r
+remotes::install_github("elmertumlos/tidyview")
+```
+
+On Windows, GitHub installation may require compatible local build tools
+such as Rtools because the package is installed from source.
+
+If you are distributing a prepared release file directly, users can also
+install from a built tarball:
+
+```r
+install.packages(
+  "C:/path/to/tidyview_0.3.0.tar.gz",
+  repos = NULL,
+  type = "source"
+)
+```
+
+### For Developers
+
+If you are working inside the package source directory and want to test
+changes without reinstalling every time:
+
+```r
+devtools::load_all("C:/path/to/tidyview")
+```
+
+Developer checks such as `devtools::check()` or `devtools::check_built()`
+may require compatible local build tools such as Rtools on Windows, even
+when the package itself installs and runs normally from a built tarball.
+
+## Launch The App
+
+```r
+library(tidyview)
+
+# open with a data frame already in memory
+tidygui(mtcars)
+
+# open with a file-backed object
+tidygui(data.table::fread("sales.csv"), name = "sales")
+
+# open the import dialog first
+tidygui()
+```
+
+By default, `tidygui()` launches a local browser app at `http://127.0.0.1:7474` and keeps generated R code visible as you work.
+
+## Core Workflow Areas
+
+`tidyview` covers the parts of day-to-day data work that analysts repeatedly return to:
+
+- **Inspect and profile** data structure, column types, duplicates, missingness, and top values
+- **Filter and select** rows and columns with guided controls and generated code
+- **Mutate and recode** variables with safer helpers for text, dates, units, and categories
+- **Summarise and tabulate** grouped results, frequency tables, and crosstabs
+- **Join and compare** datasets with clearer diagnostics around keys, duplicates, and row impact
+- **Reshape** data with guided `pivot_longer`, `pivot_wider`, `separate`, and `unite` flows
+- **Validate** required fields, ranges, unique keys, and business rules
+- **Audit and review missing data** before reporting or export
+- **Plot and export** with lightweight charting and safer file output flow
+
+## Design Principles
+
+Three ideas drive the package:
+
+1. **Guided, not opaque**  
+   The interface explains what it is doing in plain language rather than expecting users to translate function signatures mentally.
+
+2. **Safer by default**  
+   High-impact operations provide previews, warnings, or decision support before changes are applied.
+
+3. **Code always visible**  
+   `tidyview` is not a black box. The script pane remains part of the workflow so users can learn from it or move seamlessly into programmatic work.
+
+## Programmatic Helpers
+
+The GUI is backed by lightweight helper functions that return a `data.table` and attach generated code in `attr(x, "tv_code")`.
 
 ```r
 sales <- tv_fread("sales.csv")
 sales <- tv_filter(sales, list(list(col = "region", op = "==", val = "North")))
 sales <- tv_mutate(sales, "tax", "amount * 0.12")
-sales <- tv_mutate(sales, "region_clean", "tools::toTitleCase(trimws(as.character(region)))")
 sales <- tv_arrange(sales, list(list(col = "amount", desc = TRUE)))
+
 audit_report <- tv_audit(sales, top_n = 5L)
 missing_report <- tv_missing_summary(sales, group_by = "region")
-validate_report <- tv_validate(sales, rules = list(
-  list(type = "not_missing", col = "record_id"),
-  list(type = "range", col = "amount", min = "0")
-))
-compare_report <- tv_compare(sales, archived_sales, by = "record_id")
-sales_tab <- tv_tabulate(sales, "product", output_name = "sales_tab")
-sales_xtab <- tv_crosstab(sales, "region", "product", output_name = "sales_xtab")
+validate_report <- tv_validate(
+  sales,
+  rules = list(
+    list(type = "not_missing", col = "record_id"),
+    list(type = "range", col = "amount", min = "0")
+  )
+)
 
 attr(sales, "tv_code")
 ```
 
-## Guided workflows
+This makes `tidyview` useful both as an interactive tool and as a reproducible workflow generator.
 
-The highest-use panels are now designed to read more like tasks than R functions.
+## Screenshots
 
-- `mutate` explains source columns, result columns, and formulas in plain English
-- `filter` explains which rows will stay and which columns drive the rule
-- `recode` supports safer category relabeling, including partial recodes and grouped category outputs
-- `join` previews row changes and explains how matches are kept
-- `drop_na` shows how many rows would be removed before apply
-- `separate / unite` explains how columns will split or combine and whether the originals stay
+### Startup
 
-This makes the app friendlier for common tasks like converting `height` from centimeters to inches in `starwars`, relabeling categories without accidentally wiping untouched values, previewing join row changes before apply, and safely working with list-column datasets.
+![Startup](man/figures/startup-v0.3.0.png)
 
-## Operations
+### Load Panel
 
-| GUI panel | `data.table` equivalent |
-|-----------|-------------------------|
-| Audit data | `tv_audit(DT)` |
-| Missing data | `tv_missing_summary(DT, group_by = "region")` |
-| Validate data | `tv_validate(DT, rules = list(...))` |
-| Compare data | `tv_compare(DT, other, by = c("id"))` |
+![Load panel](man/figures/load-panel-v0.3.0.png)
+
+### Mutate Recipes
+
+![Mutate recipes](man/figures/mutate-recipes-v0.3.0.png)
+
+### Validation Templates
+
+![Validate panel](man/figures/validate-panel-v0.3.0.png)
+
+### Pivot
+
+![Pivot panel](man/figures/pivot-panel-v0.3.0.png)
+
+### Area Names
+
+![Area names panel](man/figures/area-names-panel-v0.3.0.png)
+
+### Export
+
+![Export panel](man/figures/export-panel-v0.3.0.png)
+
+## Representative Operations
+
+| Workflow | Typical generated `data.table` style |
+|----------|--------------------------------------|
 | Filter rows | `DT[condition]` |
 | Select columns | `DT[, .(col1, col2)]` |
-| Mutate | `DT[, new := expr]` |
+| Mutate | `DT[, new_col := expr]` |
 | Summarise | `DT[, .(stat = fn(col)), by = group]` |
 | Arrange | `DT[order(col)]` |
-| Join tables | `merge(DT, DT2, by = "key")` |
+| Join | `merge(DT, lookup, by = "key")` |
 | Pivot long | `melt(DT, id.vars = ..., measure.vars = ...)` |
 | Pivot wide | `dcast(DT, formula, value.var = ...)` |
 | Tabulate | `DT[, .(n = .N), by = .(col)]` |
 | Crosstab | `dcast(DT[, .(n = .N), by = .(row, col)], row ~ col)` |
-| Plot | `graphics::plot(...)`, `graphics::hist(...)`, `graphics::barplot(...)` |
-| Rename columns | `setnames(DT, old, new)` |
-| Distinct | `unique(DT)` |
+| Rename | `setnames(DT, old, new)` |
 | Export | `fwrite(DT, "file.csv")` |
 
-## Data audit
+## Optional Integrations
 
-`tidyview` now includes a dedicated audit panel for quick data-quality checks:
+`tidyview` works with a small required dependency set and uses optional packages only when a feature needs them.
 
-- overall row and column counts
-- missing rows and missing cells
-- duplicate row count
-- distinct counts by column
-- top values, sample values, and simple ranges
-
-Typical generated R looks like:
-
-```r
-audit_report <- tv_audit(DT, top_n = 5L)
-```
-
-The programmatic helper returns a list with `overview` and `columns` tables,
-plus the generated code in `attr(audit_report, "tv_code")`.
-
-## Missing-data dashboard
-
-`tidyview` now includes a dedicated missing-data dashboard so you can focus on
-missingness before cleaning.
-
-- missing cells and rows at a glance
-- columns sorted by missingness
-- optional grouped missingness summary
-- quick links into `replace_na` and `drop_na`
-
-Typical generated R looks like:
-
-```r
-missing_report <- tv_missing_summary(DT, group_by = "region")
-```
-
-## Validation rules
-
-`tidyview` also includes a validation panel for explicit pass/fail checks.
-
-- required / not-missing fields
-- unique keys
-- allowed values
-- regex patterns
-- numeric or date ranges
-- custom row-wise expressions
-
-Typical generated R looks like:
-
-```r
-validate_report <- tv_validate(
-  DT,
-  rules = list(
-    list(type = "not_missing", col = "record_id"),
-    list(type = "allowed", col = "status", values = c("Open", "Closed")),
-    list(type = "range", col = "age", min = "0", max = "120")
-  )
-)
-```
-
-## Compare data
-
-`tidyview` also includes a compare panel for checking one dataset against another:
-
-- shared columns
-- columns only on the left or right
-- type mismatches
-- matched, left-only, and right-only keys
-- changed rows across shared non-key columns when keys are unique
-
-Typical generated R looks like:
-
-```r
-compare_report <- tv_compare(current_data, previous_data, by = c("record_id"))
-```
-
-## String helpers
-
-`tidyview` does not require `stringr`, but it includes several stringr-like
-workflows directly in the UI and generated R code:
-
-- filter text with `contains text`, `starts with`, `ends with`, and regex
-- mutate text with trim, title case, detect, extract, replace, and remove helpers
-- bulk rename with plain text or regex find/replace
-
-Typical generated R looks like:
-
-```r
-DT <- DT[startsWith(as.character(last_name), "San")]
-DT[, clean_name := tools::toTitleCase(trimws(tolower(as.character(last_name))))]
-DT[, code_only := sub("^.*-([0-9]+)$", "\\1", as.character(record_id), perl = TRUE)]
-```
-
-## RegEx helpers
-
-`tidyview` also documents and supports regular-expression workflows directly in
-the UI:
-
-- filter text with `matches regex` and `does not match regex`
-- classify or validate values with regex patterns
-- mutate text by extracting, removing, or replacing matched patterns
-- bulk rename columns with regex find/replace
-
-Typical generated R looks like:
-
-```r
-DT <- DT[grepl("^[A-Za-z]{3}$", as.character(last_name), perl = TRUE)]
-DT[, code_only := sub("^.*-([0-9]+)$", "\\1", as.character(record_id), perl = TRUE)]
-data.table::setnames(DT, names(DT), gsub("[^A-Za-z0-9]+", "_", names(DT), perl = TRUE))
-```
-
-## Date helpers
-
-`tidyview` also includes date-friendly workflows without requiring `lubridate`.
-
-- filter numeric or date columns with `between`
-- parse text into `Date` or `IDate`
-- extract `year`, `month`, `day`, or `year-month`
-- compute age in years from a date column
-
-Typical generated R looks like:
-
-```r
-DT <- DT[interview_date >= as.Date("2024-01-01") & interview_date <= as.Date("2024-12-31")]
-DT[, birth_date := data.table::as.IDate(as.character(raw_birth_date), format = "%m/%d/%Y")]
-DT[, birth_year := as.integer(format(as.Date(as.character(birth_date)), "%Y"))]
-DT[, age_years := as.integer(floor(as.numeric(difftime(Sys.Date(), as.Date(as.character(birth_date)), units = "days")) / 365.25))]
-```
-
-## Factor helpers
-
-`tidyview` also includes category and factor tools for cleaner reporting and
-model-ready outputs:
-
-- collapse many raw values into broader categories
-- lump rare categories into `Other`
-- reorder levels by appearance, alphabet, frequency, or a custom list
-- set a reference level first
-
-Typical generated R looks like:
-
-```r
-..tv_factor_lookup <- stats::setNames(c("Child", "Child", "Adult"), c("Infant", "Toddler", "Parent"))
-DT[, age_group := ..tv_factor_lookup[as.character(age_group)]]
-DT[is.na(age_group), age_group := as.character(age_group)]
-DT[, age_group := factor(age_group, levels = c("Child", "Adult", "Other"))]
-```
-
-## Plot builder
-
-`tidyview` now includes a phase 1 plot builder that generates base-R chart code
-without requiring `ggplot2`.
-
-- bar charts for category counts
-- histograms for numeric distributions
-- scatter plots for x/y comparisons
-- line charts for ordered x/y values
-- boxplots for numeric values by group
-
-Typical generated R looks like:
-
-```r
-graphics::hist(
-  stats::na.omit(as.numeric(DT[["income"]])),
-  main = "Distribution of income",
-  xlab = "income",
-  ylab = "Frequency",
-  col = "#534AB7",
-  border = "white"
-)
-```
-
-## Optional integrations
-
-`tidyview` can also use optional packages for richer workflows:
+Optional integrations include:
 
 - `readxl` for Excel import
 - `haven` for SPSS and Stata import/export
 - `rcdf` for RCDF import
-- `tsg` for `generate_frequency()` and `generate_crosstab()` workflows
-- `phscs` for PSGC and area-name joins
+- `tsg` for frequency and crosstab helpers
+- `writexl` for Excel export
+- `rstudioapi` for a smoother folder picker when exporting from RStudio
 
-When any of these packages are missing, tidyview shows a small startup note
-with the exact `install.packages(...)` command to run.
+PSGC area-name lookup is bundled into the package in `0.3.0`, so users do not need a separate PSGC package just to convert codes into region, province, municipality, or barangay names.
 
-`rcdf` is optional. `tidyview` still runs normally without it, and only the
-RCDF import workflow depends on that package.
+## Theming
 
-In the current tidyview GUI and helper workflow, RCDF import is documented
-around a decryption key file path, typically a PEM private-key file plus an
-optional password.
-
-The RCDF import card also includes an `include RCDF metadata` option. When
-enabled, tidyview requests `return_meta = TRUE`, preserves the returned RCDF
-metadata on imported tables, and shows any tabular RCDF dictionary output as a
-selectable table during import.
-
-## Design
-
-The GUI is built on Material Design 3. Theme the interface with any seed colour:
+`tidyview` uses a Material Design 3 visual system and can be themed with a seed colour:
 
 ```r
-tidygui(sales, theme = m3_theme("#1D9E75"))
-tidygui(sales, theme = m3_theme("#D85A30", dark = TRUE))
+tidygui(mtcars, theme = m3_theme("#1D9E75"))
+tidygui(mtcars, theme = m3_theme("#D85A30", dark = TRUE))
 ```
 
 ## License

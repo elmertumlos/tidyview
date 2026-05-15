@@ -21,10 +21,9 @@ data without writing each step by hand.
 Every click generates a valid `data.table` expression shown live in the **code
 pane**. The more you use it, the more R you learn by watching.
 
-Version `0.2.0` focuses on making the highest-use panels easier to understand
-for non-technical users. Common tasks now use clearer labels, plain-English
-summaries, and safer previews before destructive actions such as recode,
-join, and `drop_na`.
+Version `0.3.0` carries forward the guided workflow improvements introduced in
+`0.2.0`. Common tasks use clearer labels, plain-English summaries, and safer
+previews before destructive actions such as recode, join, and `drop_na`.
 
 ## Installation
 
@@ -143,8 +142,8 @@ behavior ahead of time.
 
 ## Working with list-column data
 
-`tidyview 0.2.0` is more stable on datasets that contain list-columns, such
-as `dplyr::starwars`.
+`tidyview 0.3.0` continues the more stable handling of datasets that contain
+list-columns, such as `dplyr::starwars`.
 
 - `mutate` can add new columns without breaking the table refresh
 - `drop_na` now previews and applies correctly even when the table contains

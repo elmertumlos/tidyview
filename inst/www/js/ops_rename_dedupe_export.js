@@ -8,21 +8,28 @@ TV.panels = TV.panels || {};
 TV.panels.rename = function(pane) {
   const cols = window.__TV_COLS__ || [];
   const rows = cols.map((c, idx) => `
-    <tr id="ren-row-${idx}">
-      <td style="padding:6px 10px;font:var(--tv-type-mono);font-size:12px">${TV.escapeHtml(c.name)}</td>
-      <td style="padding:6px 8px"><span class="tv-type tv-type-${c.type}">${c.type}</span></td>
-      <td style="padding:6px 8px">
+    <div id="ren-row-${idx}" style="border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm);padding:10px 12px;background:var(--md-surface);display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+        <div style="min-width:0">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);font-weight:500;margin-bottom:4px">current name</div>
+          <div style="font:var(--tv-type-mono);font-size:12px;word-break:break-word">${TV.escapeHtml(c.name)}</div>
+        </div>
+        <span class="tv-type tv-type-${c.type}" style="flex-shrink:0">${c.type}</span>
+      </div>
+      <div class="tv-field" style="margin-top:0">
+        <label class="tv-field-label">new name</label>
         <input class="tv-input" id="ren-new-${idx}" value="${TV.escapeAttr(c.name)}"
           style="padding:5px 9px;font-size:12px;font-family:var(--tv-type-mono)"
           oninput="TVRENAME.updatePreview()">
-      </td>
-      <td style="padding:6px 8px">
+      </div>
+      <div class="tv-field" style="margin-top:0">
+        <label class="tv-field-label">retype to</label>
         <select class="tv-select" id="retype-${idx}" style="padding:5px 8px;font-size:11px" onchange="TVRENAME.updatePreview()">
           ${['(keep)', 'int', 'dbl', 'chr', 'lgl', 'IDate', 'factor'].map(t =>
             `<option value="${t}" ${t === '(keep)' ? 'selected' : ''}>${t}</option>`).join('')}
         </select>
-      </td>
-    </tr>`).join('');
+      </div>
+    </div>`).join('');
   const colOpts = cols.map(c => `<option value="${TV.escapeAttr(c.name)}">${TV.escapeHtml(c.name)}</option>`).join('');
 
   pane.innerHTML = `
@@ -36,6 +43,9 @@ TV.panels.rename = function(pane) {
       <button class="tv-panel-close" onclick="TV.closePanel()">x</button>
     </div>
     <div class="tv-panel-body">
+      <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:14px;line-height:1.6">
+        Rename columns in bulk, then fine-tune individual names and optional type changes before applying.
+      </div>
       <div style="padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm);margin-bottom:12px;background:var(--md-surface-variant)">
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:8px;font-weight:500">rename_with</div>
         <div style="font-size:11px;color:var(--md-on-surface-variant);line-height:1.6;margin-bottom:10px">
@@ -56,6 +66,9 @@ TV.panels.rename = function(pane) {
         </div>
         <div class="tv-field">
           <label class="tv-field-label">transform</label>
+          <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+            Apply a bulk naming pattern first, then edit any exceptions directly in the table below.
+          </div>
           <select class="tv-select" id="rename-transform" onchange="TVRENAME.syncTransformUI();TVRENAME.updatePreview()">
             <option value="lower">lowercase</option>
             <option value="upper">UPPERCASE</option>
@@ -94,16 +107,11 @@ TV.panels.rename = function(pane) {
         </div>
       </div>
 
-      <div style="overflow-x:auto;margin-bottom:12px">
-        <table style="width:100%;border-collapse:collapse;font-size:12px">
-          <thead><tr style="background:var(--md-surface-variant)">
-            <th style="padding:6px 10px;text-align:left;font-size:10px;color:var(--md-on-surface-variant);font-weight:500">current name</th>
-            <th style="padding:6px 8px;text-align:left;font-size:10px;color:var(--md-on-surface-variant);font-weight:500">type</th>
-            <th style="padding:6px 8px;text-align:left;font-size:10px;color:var(--md-on-surface-variant);font-weight:500">new name</th>
-            <th style="padding:6px 8px;text-align:left;font-size:10px;color:var(--md-on-surface-variant);font-weight:500">retype to</th>
-          </tr></thead>
-          <tbody style="border:1px solid var(--md-outline-variant)">${rows}</tbody>
-        </table>
+      <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.6">
+        Edit the <code>new name</code> field directly below each column, then optionally change its output type.
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+        ${rows}
       </div>
       <div style="padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm)">
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:5px;font-weight:500">generated R</div>
@@ -335,6 +343,9 @@ TV.panels.dedupe = function(pane) {
       </div>
       <div class="tv-field">
         <label class="tv-field-label">define uniqueness by (leave empty = all columns)</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Leave this empty to keep only fully distinct rows, or choose columns to keep one row per unique combination.
+        </div>
         <div id="dedupe-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:28px"></div>
         <select class="tv-select" id="dedupe-add" onchange="TVDEDUPE.addCol(this.value);this.value=''">
           <option value="">add column...</option>${colOpts}
@@ -426,6 +437,9 @@ TV.panels.export = function(pane) {
     </div>
     <div class="tv-panel-body">
       <div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:10px">save to R environment</div>
+      <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+        Save the current table under a new object name without writing a file to disk.
+      </div>
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
         <input class="tv-input" id="env-save-name" value="${curName}_out"
           style="font-family:var(--tv-type-mono);padding:7px 10px;font-size:12px;flex:1"
@@ -439,6 +453,9 @@ TV.panels.export = function(pane) {
       <div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:10px">export to file</div>
       <div class="tv-field">
         <label class="tv-field-label">format</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Choose the format based on where the data will be used next, such as spreadsheets, R, or other stats software.
+        </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="tv-chip selected" id="exp-csv" onclick="TVEXPORT.setFmt('csv')">CSV</button>
           <button class="tv-chip" id="exp-xlsx" onclick="TVEXPORT.setFmt('xlsx')">Excel (.xlsx)</button>
@@ -448,7 +465,26 @@ TV.panels.export = function(pane) {
         </div>
       </div>
       <div class="tv-field">
+        <label class="tv-field-label">folder</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Choose where the file should be written. Use the folder picker or enter a path manually.
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+          <input class="tv-input" id="exp-folder" placeholder="current working directory"
+            style="font-family:var(--tv-type-mono);padding:7px 10px;font-size:12px;flex:1;min-width:220px"
+            oninput="TVEXPORT.updateFilePreview()">
+          <button class="tv-btn-outlined" type="button" onclick="TVEXPORT.chooseFolder()">choose folder...</button>
+          <button class="tv-btn-outlined" type="button" onclick="TVEXPORT.useWorkingDir()">use current folder</button>
+        </div>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);line-height:1.5">
+          <span style="font-weight:500">Note:</span> This opens a native folder dialog, which may appear in RStudio or behind Chrome.
+        </div>
+      </div>
+      <div class="tv-field">
         <label class="tv-field-label">filename</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          This is the file name only. The selected folder above controls where it will be saved.
+        </div>
         <input class="tv-input" id="exp-filename" value="${curName}.csv"
           style="font-family:var(--tv-type-mono);padding:7px 10px;font-size:12px"
           oninput="TVEXPORT.updateFilePreview()">
@@ -456,8 +492,9 @@ TV.panels.export = function(pane) {
       <div style="padding:8px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm);margin-bottom:10px">
         <div id="export-preview" style="font:var(--tv-type-mono);font-size:11px;color:var(--md-on-surface)"></div>
       </div>
+      <div id="export-file-info" style="padding:8px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm);margin-bottom:10px;font-size:11px;line-height:1.6;color:var(--md-on-surface)"></div>
       <div style="padding:8px 12px;background:var(--md-surface-variant);border-radius:var(--tv-radius-sm);font-size:11px;color:var(--md-on-surface-variant)">
-        File saved to working directory (<code style="font-size:10px">getwd()</code>).
+        If you leave the folder blank, tidyview uses the current working directory (<code style="font-size:10px">getwd()</code>). Choose a folder above when you want the file saved somewhere else.
       </div>
     </div>
     <div class="tv-panel-footer">
@@ -473,10 +510,32 @@ TV.panels.export = function(pane) {
 const TVEXPORT = (() => {
   let fmt = 'csv';
   let baseName = 'DT';
+  let previewSeq = 0;
+  let latestPreview = null;
+  let workingDir = '';
+
+  function scalarValue(value) {
+    if (value == null) return '';
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+    if (Array.isArray(value)) {
+      const first = value.find(v => v != null && v !== '');
+      return first == null ? '' : String(first);
+    }
+    if (typeof value === 'object') {
+      const vals = Object.values(value).filter(v => v != null && v !== '');
+      return vals.length ? String(vals[0]) : '';
+    }
+    return '';
+  }
 
   function init(name) {
     fmt = 'csv';
     baseName = name;
+    previewSeq = 0;
+    latestPreview = null;
+    workingDir = '';
     updateEnvPreview();
     updateFilePreview();
   }
@@ -496,18 +555,94 @@ const TVEXPORT = (() => {
     updateFilePreview();
   }
 
-  function updateFilePreview() {
-    const fn = document.getElementById('exp-filename')?.value || baseName + '.' + fmt;
+  function sanitizeFilename(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return `${baseName}.${fmt}`;
+    return raw.replace(/^.*[\\/]/, '') || `${baseName}.${fmt}`;
+  }
+
+  function buildExportPath() {
+    const folder = String(document.getElementById('exp-folder')?.value || '').trim();
+    const filename = sanitizeFilename(document.getElementById('exp-filename')?.value);
+    if (!folder) return filename;
+    return folder.replace(/[\\/]+$/, '') + '/' + filename;
+  }
+
+  async function updateFilePreview() {
+    const fileInput = document.getElementById('exp-filename');
+    const path = buildExportPath();
     const prev = document.getElementById('export-preview');
-    if (!prev) return;
-    const code = {
-      csv: `data.table::fwrite(${baseName}, "${fn}")`,
-      xlsx: `writexl::write_xlsx(as.data.frame(${baseName}), "${fn}")`,
-      rds: `saveRDS(${baseName}, "${fn}")`,
-      sav: `haven::write_sav(as.data.frame(${baseName}), "${fn}")`,
-      dta: `haven::write_dta(as.data.frame(${baseName}), "${fn}")`,
-    };
-    prev.textContent = code[fmt] || '';
+    const info = document.getElementById('export-file-info');
+    if (fileInput) {
+      const cleaned = sanitizeFilename(fileInput.value);
+      if (fileInput.value !== cleaned) fileInput.value = cleaned;
+    }
+    if (prev) prev.textContent = 'Preparing export preview...';
+    if (info) info.innerHTML = '<span style="color:var(--md-on-surface-variant)">Checking destination, overwrite risk, and package support...</span>';
+    const seq = ++previewSeq;
+    try {
+      const res = await TV.api('export_preview', { format: fmt, path });
+      if (seq !== previewSeq) return;
+      latestPreview = res;
+       workingDir = scalarValue(res.working_dir) || workingDir;
+      if (prev) prev.textContent = res.code || '';
+      if (info) {
+        const pkgName = scalarValue(res.package_needed);
+        const folderInput = String(document.getElementById('exp-folder')?.value || '').trim();
+        const lines = [];
+        lines.push(`<div><strong>Resolved path:</strong> <code style="font-size:10px">${TV.escapeHtml(res.path || path)}</code></div>`);
+        lines.push(`<div><strong>Folder:</strong> ${TV.escapeHtml(folderInput || scalarValue(res.dir) || workingDir || '(current working directory)')}</div>`);
+        if (!res.dir_exists) {
+          lines.push('<div style="color:var(--md-error)">The destination folder does not exist yet.</div>');
+        } else if (res.exists) {
+          lines.push('<div style="color:var(--md-error)">A file already exists at this path. Exporting will overwrite it if you continue.</div>');
+        } else {
+          lines.push('<div>This path is available and will create a new file.</div>');
+        }
+        if (pkgName) {
+          lines.push(res.package_ok
+            ? `<div>${TV.escapeHtml(pkgName)} is available for this format.</div>`
+            : `<div style="color:var(--md-error)">This format needs the <code style="font-size:10px">${TV.escapeHtml(pkgName)}</code> package, which is not available in this R session.</div>`);
+        }
+        info.innerHTML = lines.join('');
+      }
+    } catch (e) {
+      if (seq !== previewSeq) return;
+      latestPreview = null;
+      if (prev) prev.textContent = '# export preview unavailable';
+      if (info) info.innerHTML = `<span style="color:var(--md-error)">${TV.escapeHtml(e.message)}</span>`;
+    }
+  }
+
+  async function chooseFolder() {
+    const startDir = String(document.getElementById('exp-folder')?.value || workingDir || '').trim();
+    const info = document.getElementById('export-file-info');
+    if (info) {
+      info.innerHTML = '<span style="color:var(--md-on-surface-variant)">Waiting for the folder chooser. The dialog may appear in RStudio or behind Chrome, so check other windows before typing the path manually.</span>';
+    }
+    try {
+      const res = await TV.api('choose_export_folder', { start_dir: startDir || null });
+      if (!res.cancelled && res.path) {
+        const input = document.getElementById('exp-folder');
+        if (input) input.value = res.path || '';
+        updateFilePreview();
+      } else {
+        if (info) {
+          info.innerHTML = '<span style="color:var(--md-on-surface-variant)">No folder was selected. The dialog may have opened outside Chrome or RStudio focus. You can try again, type the path manually, or use the current folder.</span>';
+        }
+        if (typeof TV.showToast === 'function') {
+          TV.showToast('No folder selected. Check RStudio or other windows for the dialog next time.');
+        }
+      }
+    } catch (e) {
+      await TV.showError('Folder selection error: ' + e.message);
+    }
+  }
+
+  function useWorkingDir() {
+    const input = document.getElementById('exp-folder');
+    if (input) input.value = workingDir || '';
+    updateFilePreview();
   }
 
   async function saveToEnv() {
@@ -524,9 +659,17 @@ const TVEXPORT = (() => {
   }
 
   async function applyFile() {
-    const path = document.getElementById('exp-filename')?.value || baseName + '.' + fmt;
+    const path = buildExportPath();
     try {
-      const res = await TV.api('export', { format: fmt, path });
+      const preview = latestPreview || await TV.api('export_preview', { format: fmt, path });
+      if (preview.exists) {
+        const ok = await TV.confirmMessage(
+          `A file already exists at:\n${preview.path}\n\nOverwrite it?`,
+          { title: 'Overwrite Existing File?', confirmLabel: 'overwrite' }
+        );
+        if (!ok) return;
+      }
+      const res = await TV.api('export', { format: fmt, path, overwrite: !!preview.exists });
       TV.pushCode(res.code);
       await TV.showMessage(`Exported to: ${res.path}`, { title: 'Export Complete' });
       TV.closePanel();
@@ -535,5 +678,5 @@ const TVEXPORT = (() => {
     }
   }
 
-  return { init, setFmt, updateEnvPreview, updateFilePreview, saveToEnv, applyFile };
+  return { init, setFmt, updateEnvPreview, updateFilePreview, chooseFolder, useWorkingDir, saveToEnv, applyFile };
 })();

@@ -46,6 +46,9 @@ TV.panels.compare = function(pane) {
 
       <div class="tv-field" style="margin-top:0">
         <label class="tv-field-label">compare with</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Choose whether the other dataset should come from another tidyview tab or directly from the R environment.
+        </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="tv-chip selected" id="compare-source-session" onclick="TVCOMPARE.setSourceType('session')">open tab</button>
           <button class="tv-chip" id="compare-source-env" onclick="TVCOMPARE.setSourceType('env')">R environment</button>
@@ -57,15 +60,24 @@ TV.panels.compare = function(pane) {
         <select class="tv-select" id="compare-source-select" onchange="TVCOMPARE.loadSummary()">
           <option value="">loading sources...</option>
         </select>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-top:6px;line-height:1.5">
+          Pick the dataset you want to compare against the active table.
+        </div>
         <div id="compare-source-note" style="font-size:11px;color:var(--md-on-surface-variant);margin-top:6px;line-height:1.6"></div>
       </div>
 
       <div class="tv-field">
         <label class="tv-field-label">key columns for row comparison (optional)</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Add shared identifiers like <code>id</code> or <code>name</code> when you want to detect added, removed, or changed rows.
+        </div>
         <div id="compare-key-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:28px"></div>
         <select class="tv-select" id="compare-key-add" onchange="TVCOMPARE.addKey(this.value);this.value=''">
           <option value="">choose shared column...</option>
         </select>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-top:6px;line-height:1.5">
+          Row-level change examples work best when the selected keys are unique in both datasets.
+        </div>
       </div>
 
       <div id="compare-status" style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:10px">Loading comparison...</div>
@@ -95,6 +107,11 @@ TV.panels.compare = function(pane) {
       <div class="tv-compare-section">
         <div class="tv-compare-title">key comparison</div>
         <div id="compare-keys" class="tv-compare-list"></div>
+      </div>
+
+      <div class="tv-compare-section">
+        <div class="tv-compare-title">changed matched rows</div>
+        <div id="compare-changes" class="tv-compare-list"></div>
       </div>
 
       <div style="margin-top:14px;padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm)">
@@ -259,6 +276,7 @@ const TVCOMPARE = globalThis.TVCOMPARE = (() => {
     const el = document.getElementById('compare-overview');
     if (!el) return;
     const overview = result?.overview || {};
+    const keySummary = result?.key_summary || null;
     const cards = [
       ['active rows', overview.left_nrow],
       ['other rows', overview.right_nrow],
@@ -267,11 +285,35 @@ const TVCOMPARE = globalThis.TVCOMPARE = (() => {
       ['shared columns', overview.shared_columns_n],
       ['type mismatches', overview.type_mismatches_n],
     ];
+    if (keySummary) {
+      cards.push(['matched keys', keySummary.matched_keys || 0]);
+      cards.push(['changed rows', keySummary.changed_rows || 0]);
+    }
     el.innerHTML = cards.map(([label, value]) => `
       <div class="tv-audit-card">
         <div class="tv-audit-card-label">${TV.escapeHtml(label)}</div>
         <div class="tv-audit-card-value">${Number(value || 0).toLocaleString()}</div>
       </div>`).join('');
+  }
+
+  function renderChangeExamples(keySummary) {
+    if (!keySummary) {
+      renderList('compare-changes', ['Add one or more key columns to compare matched rows.'], item => `<div class="tv-compare-item"><span>${TV.escapeHtml(item)}</span></div>`);
+      return;
+    }
+    if (!keySummary.compare_ready) {
+      renderList('compare-changes', ['Row-level change review needs keys that are unique in both datasets.'], item => `<div class="tv-compare-item"><span>${TV.escapeHtml(item)}</span></div>`);
+      return;
+    }
+    if (!Number(keySummary.changed_rows || 0)) {
+      renderList('compare-changes', ['Matched rows agree across all shared non-key columns.'], item => `<div class="tv-compare-item"><span>${TV.escapeHtml(item)}</span></div>`);
+      return;
+    }
+    renderList('compare-changes', keySummary.changed_examples || [], item => `
+      <div class="tv-compare-item">
+        <strong>${TV.escapeHtml(item.key || 'matched row')}</strong>
+        <span>${TV.escapeHtml(item.summary || 'values changed')}</span>
+      </div>`);
   }
 
   function renderKeyChips() {
@@ -326,7 +368,14 @@ const TVCOMPARE = globalThis.TVCOMPARE = (() => {
       keyCols = keyCols.filter(col => sharedColumns.includes(col));
       renderKeyChips();
       if (status) {
-        status.textContent = `Compared ${res.overview.left_name} with ${res.overview.right_name}.`;
+        const keySummary = res.key_summary;
+        if (!keySummary) {
+          status.textContent = `Compared ${res.overview.left_name} with ${res.overview.right_name}. Add key columns to review row-level differences.`;
+        } else if (!keySummary.compare_ready) {
+          status.textContent = `Compared ${res.overview.left_name} with ${res.overview.right_name}. Key overlap is available, but row-level change review needs unique keys in both datasets.`;
+        } else {
+          status.textContent = `Compared ${res.overview.left_name} with ${res.overview.right_name}. Found ${Number(keySummary.matched_keys || 0).toLocaleString()} matched keys and ${Number(keySummary.changed_rows || 0).toLocaleString()} changed matched row(s).`;
+        }
       }
       if (preview) preview.textContent = res.code || '# compare unavailable';
       renderOverview(res);
@@ -340,19 +389,24 @@ const TVCOMPARE = globalThis.TVCOMPARE = (() => {
         </div>`);
       const keySummary = res.key_summary;
       const keyItems = keySummary ? [
-        `matched keys: ${Number(keySummary.matched_keys || 0).toLocaleString()}`,
-        `only in active: ${Number(keySummary.only_left_keys || 0).toLocaleString()}`,
-        `only in other: ${Number(keySummary.only_right_keys || 0).toLocaleString()}`,
-        `duplicate keys in active: ${Number(keySummary.duplicate_keys_left || 0).toLocaleString()}`,
-        `duplicate keys in other: ${Number(keySummary.duplicate_keys_right || 0).toLocaleString()}`,
-        keySummary.changed_rows === null || keySummary.changed_rows === undefined
-          ? (keySummary.compare_ready ? 'changed matched rows: 0' : 'changed matched rows: need unique keys')
-          : `changed matched rows: ${Number(keySummary.changed_rows || 0).toLocaleString()}`,
-        (keySummary.changed_columns || []).length
-          ? `changed columns: ${keySummary.changed_columns.join(', ')}`
-          : 'changed columns: none',
+        `${Number(keySummary.matched_keys || 0).toLocaleString()} matched key(s) appear in both datasets.`,
+        `${Number(keySummary.only_left_keys || 0).toLocaleString()} key(s) only appear in the active dataset.`,
+        `${Number(keySummary.only_right_keys || 0).toLocaleString()} key(s) only appear in the other dataset.`,
+        `${Number(keySummary.duplicate_keys_left || 0).toLocaleString()} duplicate key row(s) exist in the active dataset.`,
+        `${Number(keySummary.duplicate_keys_right || 0).toLocaleString()} duplicate key row(s) exist in the other dataset.`,
+        keySummary.compare_ready
+          ? `${Number(keySummary.changed_rows || 0).toLocaleString()} matched row(s) changed and ${Number(keySummary.unchanged_rows || 0).toLocaleString()} matched row(s) stayed the same.`
+          : 'Row-level change review is paused until the selected keys are unique in both datasets.',
       ] : ['Add one or more key columns to compare matched rows.'];
+      if (keySummary && keySummary.compare_ready && (keySummary.changed_column_counts || []).length) {
+        (keySummary.changed_column_counts || []).forEach(item => {
+          keyItems.push(`${item.column} changed in ${Number(item.count || 0).toLocaleString()} matched row(s).`);
+        });
+      } else if (keySummary && keySummary.compare_ready) {
+        keyItems.push('No shared non-key columns changed across matched rows.');
+      }
       renderList('compare-keys', keyItems, item => `<div class="tv-compare-item"><span>${TV.escapeHtml(item)}</span></div>`);
+      renderChangeExamples(keySummary);
     } catch (e) {
       sharedColumns = [];
       keyCols = [];
@@ -365,6 +419,7 @@ const TVCOMPARE = globalThis.TVCOMPARE = (() => {
       renderList('compare-right-only', [], x => x);
       renderList('compare-mismatches', [], x => x);
       renderList('compare-keys', [], x => x);
+      renderList('compare-changes', [], x => x);
     }
   }
 

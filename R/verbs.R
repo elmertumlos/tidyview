@@ -9,6 +9,84 @@
 #' Lightweight programmatic helpers that mirror the main tidyview GUI actions.
 #' Each helper returns a `data.table` result or summary object and stores the
 #' generated paste-ready R code in `attr(x, "tv_code")`.
+#'
+#' @details
+#' These helpers make it possible to use tidyview workflows without opening the
+#' browser interface. They are useful when you want the same operation model as
+#' the GUI, but you prefer to work directly in scripts, notebooks, or tests.
+#'
+#' Most verbs return a transformed `data.table` and store the generated code in
+#' `attr(x, "tv_code")`. Summary-style helpers such as [tv_audit()],
+#' [tv_compare()], [tv_validate()], and [tv_missing_summary()] return structured
+#' result objects with the same `tv_code` attribute for reproducibility.
+#'
+#' @section Core transformation helpers:
+#' \itemize{
+#'   \item [tv_filter()] filters rows with structured conditions or a custom expression.
+#'   \item [tv_mutate()] creates or replaces columns from an R expression.
+#'   \item [tv_summarise()] computes grouped or ungrouped summaries.
+#'   \item [tv_arrange()] sorts rows.
+#'   \item [tv_select()] keeps a chosen subset of columns.
+#' }
+#'
+#' @section Review and validation helpers:
+#' \itemize{
+#'   \item [tv_audit()] profiles columns, duplicates, and missingness.
+#'   \item [tv_compare()] compares two datasets and summarizes structural differences.
+#'   \item [tv_validate()] runs explicit validation rules and reports failures.
+#'   \item [tv_missing_summary()] focuses on missing-data patterns.
+#' }
+#'
+#' @section Reshaping and combination helpers:
+#' \itemize{
+#'   \item [tv_join()], [tv_bind_rows()], and [tv_bind_cols()] combine datasets.
+#'   \item [tv_reshape()] performs longer or wider reshaping.
+#'   \item [tv_separate()] and [tv_unite()] split or combine text columns.
+#'   \item [tv_relocate()], [tv_rename()], and [tv_rename_with()] reorganize columns.
+#' }
+#'
+#' @section Frequency and tabulation helpers:
+#' \itemize{
+#'   \item [tv_count()] counts rows by group.
+#'   \item [tv_tabulate()] creates one-way frequency tables.
+#'   \item [tv_crosstab()] creates two-way cross-tabulations.
+#' }
+#'
+#' @return
+#' A transformed `data.table` or a tidyview summary object. In all cases, the
+#' generated R code for the operation is stored in `attr(x, "tv_code")`.
+#'
+#' @examples
+#' dt <- data.table::as.data.table(mtcars)
+#'
+#' filtered <- tv_filter(
+#'   dt,
+#'   conditions = list(list(col = "cyl", op = "==", val = "6"))
+#' )
+#' attr(filtered, "tv_code")
+#'
+#' mutated <- tv_mutate(dt, col_name = "km_per_l", expr = "mpg * 0.425144")
+#' names(mutated)
+#'
+#' summary_dt <- tv_summarise(
+#'   dt,
+#'   aggregations = list(
+#'     list(output = "avg_mpg", fn = "mean", col = "mpg"),
+#'     list(output = "n_cars", fn = "n", col = "mpg")
+#'   ),
+#'   group_by = "cyl"
+#' )
+#'
+#' validation <- tv_validate(
+#'   dt,
+#'   rules = list(
+#'     list(id = "rule1", type = "required", column = "mpg", label = "mpg is required")
+#'   )
+#' )
+#' attr(validation, "tv_code")
+#'
+#' @seealso [tidygui()], [tv_load()], [tv_get_psgc()], [tv_generate_frequency()],
+#'   [tv_generate_crosstab()]
 
 .tv_state <- function(data, as) {
   dt <- if (data.table::is.data.table(data)) data.table::copy(data) else data.table::as.data.table(data)
@@ -22,7 +100,7 @@
 
 
 .tv_result <- function(state) {
-  attr(state$dt, "tv_code") <- tail(state$history, 1)
+  attr(state$dt, "tv_code") <- utils::tail(state$history, 1)
   state$dt
 }
 

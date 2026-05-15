@@ -415,6 +415,10 @@ level order.}
 
 \item{remove}{Drop the source columns after combining. Default \code{TRUE}.}
 }
+\value{
+A transformed \code{data.table} or a tidyview summary object. In all cases, the
+generated R code for the operation is stored in \code{attr(x, "tv_code")}.
+}
 \description{
 Lightweight programmatic helpers that mirror the main tidyview GUI actions.
 Each helper returns a \code{data.table} result or summary object and stores the
@@ -425,4 +429,87 @@ Programmatic tidyview verbs
 
 These helpers mirror the GUI operations with structured arguments and
 return a \code{data.table} carrying the generated R code in \code{attr(x, "tv_code")}.
+
+These helpers make it possible to use tidyview workflows without opening the
+browser interface. They are useful when you want the same operation model as
+the GUI, but you prefer to work directly in scripts, notebooks, or tests.
+
+Most verbs return a transformed \code{data.table} and store the generated code in
+\code{attr(x, "tv_code")}. Summary-style helpers such as \code{\link[=tv_audit]{tv_audit()}},
+\code{\link[=tv_compare]{tv_compare()}}, \code{\link[=tv_validate]{tv_validate()}}, and \code{\link[=tv_missing_summary]{tv_missing_summary()}} return structured
+result objects with the same \code{tv_code} attribute for reproducibility.
+}
+\section{Core transformation helpers}{
+
+\itemize{
+\item \code{\link[=tv_filter]{tv_filter()}} filters rows with structured conditions or a custom expression.
+\item \code{\link[=tv_mutate]{tv_mutate()}} creates or replaces columns from an R expression.
+\item \code{\link[=tv_summarise]{tv_summarise()}} computes grouped or ungrouped summaries.
+\item \code{\link[=tv_arrange]{tv_arrange()}} sorts rows.
+\item \code{\link[=tv_select]{tv_select()}} keeps a chosen subset of columns.
+}
+}
+
+\section{Review and validation helpers}{
+
+\itemize{
+\item \code{\link[=tv_audit]{tv_audit()}} profiles columns, duplicates, and missingness.
+\item \code{\link[=tv_compare]{tv_compare()}} compares two datasets and summarizes structural differences.
+\item \code{\link[=tv_validate]{tv_validate()}} runs explicit validation rules and reports failures.
+\item \code{\link[=tv_missing_summary]{tv_missing_summary()}} focuses on missing-data patterns.
+}
+}
+
+\section{Reshaping and combination helpers}{
+
+\itemize{
+\item \code{\link[=tv_join]{tv_join()}}, \code{\link[=tv_bind_rows]{tv_bind_rows()}}, and \code{\link[=tv_bind_cols]{tv_bind_cols()}} combine datasets.
+\item \code{\link[=tv_reshape]{tv_reshape()}} performs longer or wider reshaping.
+\item \code{\link[=tv_separate]{tv_separate()}} and \code{\link[=tv_unite]{tv_unite()}} split or combine text columns.
+\item \code{\link[=tv_relocate]{tv_relocate()}}, \code{\link[=tv_rename]{tv_rename()}}, and \code{\link[=tv_rename_with]{tv_rename_with()}} reorganize columns.
+}
+}
+
+\section{Frequency and tabulation helpers}{
+
+\itemize{
+\item \code{\link[=tv_count]{tv_count()}} counts rows by group.
+\item \code{\link[=tv_tabulate]{tv_tabulate()}} creates one-way frequency tables.
+\item \code{\link[=tv_crosstab]{tv_crosstab()}} creates two-way cross-tabulations.
+}
+}
+
+\examples{
+dt <- data.table::as.data.table(mtcars)
+
+filtered <- tv_filter(
+  dt,
+  conditions = list(list(col = "cyl", op = "==", val = "6"))
+)
+attr(filtered, "tv_code")
+
+mutated <- tv_mutate(dt, col_name = "km_per_l", expr = "mpg * 0.425144")
+names(mutated)
+
+summary_dt <- tv_summarise(
+  dt,
+  aggregations = list(
+    list(output = "avg_mpg", fn = "mean", col = "mpg"),
+    list(output = "n_cars", fn = "n", col = "mpg")
+  ),
+  group_by = "cyl"
+)
+
+validation <- tv_validate(
+  dt,
+  rules = list(
+    list(id = "rule1", type = "required", column = "mpg", label = "mpg is required")
+  )
+)
+attr(validation, "tv_code")
+
+}
+\seealso{
+\code{\link[=tidygui]{tidygui()}}, \code{\link[=tv_load]{tv_load()}}, \code{\link[=tv_get_psgc]{tv_get_psgc()}}, \code{\link[=tv_generate_frequency]{tv_generate_frequency()}},
+\code{\link[=tv_generate_crosstab]{tv_generate_crosstab()}}
 }

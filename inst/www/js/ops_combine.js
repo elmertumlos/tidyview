@@ -38,6 +38,9 @@ TV.panels.combine = function(pane) {
     <div class="tv-panel-body">
       <div class="tv-field" style="margin-top:0">
         <label class="tv-field-label">combine method</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Use <code>bind_rows</code> to stack one dataset under another, or <code>bind_cols</code> to place columns side by side.
+        </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="tv-chip selected" id="combine-mode-rows" onclick="TVCOMBINE.setMode('rows')">bind_rows</button>
           <button class="tv-chip" id="combine-mode-cols" onclick="TVCOMBINE.setMode('cols')">bind_cols</button>
@@ -46,6 +49,9 @@ TV.panels.combine = function(pane) {
 
       <div class="tv-field">
         <label class="tv-field-label">source</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Choose whether the second dataset should come from another tidyview tab or from an object in the R environment.
+        </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="tv-chip selected" id="combine-source-session" onclick="TVCOMBINE.setSourceType('session')">open tab</button>
           <button class="tv-chip" id="combine-source-env" onclick="TVCOMBINE.setSourceType('env')">R environment</button>
@@ -63,6 +69,9 @@ TV.panels.combine = function(pane) {
       <div id="combine-rows-options">
         <div class="tv-field">
           <label class="tv-field-label">row binding options</label>
+          <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+            Keep <code>use column names</code> on when the same columns appear in a different order. Use <code>fill missing columns</code> when one input has extra fields.
+          </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
             <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--md-on-surface)">
               <input type="checkbox" id="combine-use-names" checked onchange="TVCOMBINE.updatePreview()">

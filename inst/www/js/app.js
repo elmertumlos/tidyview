@@ -18,6 +18,7 @@ const TV = (() => {
     codeStyle: 'native',
     sessions: [],     // [{idx, name, nrow, ncol, active}]
     panel:    null,   // active panel id
+    panelContext: null,
     renderSeq: 0,
     rcdfImport: null,
   };
@@ -97,6 +98,7 @@ const TV = (() => {
       scan_env: 'scanning R environment...',
       load_env: 'loading dataset...',
       load_file: 'importing file...',
+      get_column_meta: 'profiling columns...',
       inspect_rcdf: 'inspecting RCDF file...',
       load_rcdf_tables: 'loading RCDF tables...',
       preview_op: 'checking impact...',
@@ -280,10 +282,42 @@ const TV = (() => {
       .replace(/"/g, '\\"') + '"';
   }
 
+  function normalizeColumnLabel(label) {
+    if (label == null) return null;
+    if (typeof label === 'string') {
+      const text = label.trim();
+      return text || null;
+    }
+    if (Array.isArray(label)) {
+      const parts = label
+        .map(normalizeColumnLabel)
+        .filter(Boolean);
+      return parts.length ? parts.join(' ') : null;
+    }
+    if (typeof label === 'object') {
+      return normalizeColumnLabel(label.label ?? label.text ?? label.value ?? null);
+    }
+    const text = String(label).trim();
+    return text && text !== '[object Object]' ? text : null;
+  }
+
+  function normalizeColumnRecord(column) {
+    if (!column || typeof column !== 'object') return null;
+    return {
+      ...column,
+      label: normalizeColumnLabel(column.label),
+    };
+  }
+
   function normalizeColumnsMeta(columns) {
-    if (Array.isArray(columns)) return columns;
+    if (Array.isArray(columns)) {
+      const normalized = columns.map(normalizeColumnRecord).filter(Boolean);
+      return normalized.length ? normalized : null;
+    }
     if (!columns || typeof columns !== 'object') return null;
-    const values = Object.values(columns).filter(v => v && typeof v === 'object');
+    const values = Object.values(columns)
+      .map(normalizeColumnRecord)
+      .filter(Boolean);
     return values.length ? values : null;
   }
 
@@ -527,8 +561,9 @@ const TV = (() => {
     });
   }
 
-  function openPanel(id) {
+  function openPanel(id, context = null) {
     state.panel = id;
+    state.panelContext = context && typeof context === 'object' ? context : null;
     document.querySelectorAll('.tv-nav-item').forEach(b =>
       b.classList.toggle('active', b.dataset.panel === id));
     const pane = $('op-panel');
@@ -569,9 +604,21 @@ const TV = (() => {
 
   function closePanel() {
     state.panel = null;
+    state.panelContext = null;
     const pane = $('op-panel');
     if (pane) pane.style.display = 'none';
     document.querySelectorAll('.tv-nav-item').forEach(b => b.classList.remove('active'));
+  }
+
+  function consumePanelContext() {
+    const ctx = state.panelContext;
+    state.panelContext = null;
+    return ctx && typeof ctx === 'object' ? ctx : null;
+  }
+
+  function openPanelForColumns(id, columns, extra = {}) {
+    const list = Array.isArray(columns) ? columns.filter(Boolean) : (columns ? [columns] : []);
+    openPanel(id, Object.assign({}, extra, { columns: list }));
   }
 
   /* ── code pane ── */
@@ -811,10 +858,26 @@ const TV = (() => {
   function expressionBuilderHtml(targetId, cols, options = {}) {
     const functions = options.functions || [];
     const snippets = options.snippets || [' + ', ' - ', ' * ', ' / ', ' == ', ' != ', ' > ', ' < ', ' >= ', ' <= ', ' & ', ' | ', ' %in% ', 'ifelse(', '(', ')'];
+    const snippetLabels = Object.assign({
+      'ifelse(': 'ifelse()',
+      ' %in% ': '%in%',
+      ' + ': '+',
+      ' - ': '-',
+      ' * ': '*',
+      ' / ': '/',
+      ' == ': '==',
+      ' != ': '!=',
+      ' > ': '>',
+      ' < ': '<',
+      ' >= ': '>=',
+      ' <= ': '<=',
+      ' & ': '&',
+      ' | ': '|',
+    }, options.snippetLabels || {});
     const colOpts = (cols || []).map(c => `<option value="${escapeAttr(rName(c.name))}">${escapeHtml(c.name)}</option>`).join('');
     const fnOpts = functions.map(fn => `<option value="${fn}(">${fn}()</option>`).join('');
     const snippetButtons = snippets.map(snippet =>
-      `<button type="button" class="tv-chip" onclick="TV.insertExpr('${targetId}', ${JSON.stringify(snippet)})">${snippet.trim() || snippet}</button>`
+      `<button type="button" class="tv-chip" style="padding:6px 12px;min-width:42px;text-align:center" onclick="TV.insertExpr('${targetId}', ${JSON.stringify(snippet)})">${snippetLabels[snippet] || snippet.trim() || snippet}</button>`
     ).join('');
 
     return `
@@ -826,7 +889,7 @@ const TV = (() => {
           <option value="">insert function…</option>${fnOpts}
         </select>
       </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${snippetButtons}</div>`;
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">${snippetButtons}</div>`;
   }
 
   function mutateExpressionBuilderHtml(targetId, cols, options = {}) {
@@ -880,7 +943,7 @@ const TV = (() => {
     };
     const fnOpts = functions.map(fn => `<option value="${fn}(">${escapeHtml(friendlyFnLabel(fn))}</option>`).join('');
     const snippetButtons = snippetDefs.map(snippet =>
-      `<button type="button" class="tv-chip" data-target-id="${escapeAttr(targetId)}" data-insert="${escapeAttr(snippet.insert)}" onclick="TV.insertExprFromButton(this)">${escapeHtml(snippet.label)}</button>`
+      `<button type="button" class="tv-chip" style="padding:6px 12px;min-width:42px;text-align:center" data-target-id="${escapeAttr(targetId)}" data-insert="${escapeAttr(snippet.insert)}" onclick="TV.insertExprFromButton(this)">${escapeHtml(snippet.label)}</button>`
     ).join('');
 
     return `
@@ -905,7 +968,7 @@ const TV = (() => {
         </div>
         <div style="margin-top:10px">
           <div style="font-size:10px;color:var(--md-on-surface-variant);margin-bottom:6px;font-weight:500">formula pieces</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap">${snippetButtons}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${snippetButtons}</div>
         </div>
       </div>
     `;
@@ -987,6 +1050,12 @@ const TV = (() => {
     if (/^grepl\(/.test(text)) {
       return { sources, summary: `Check whether ${sourceText || 'the source text'} matches a pattern and return TRUE or FALSE.` };
     }
+    if (text.includes('gsub("[[:punct:]]+", "",')) {
+      return { sources, summary: `Remove punctuation from ${sourceText || 'the source text'}.` };
+    }
+    if (/^trimws\(gsub\(/.test(text) && text.includes('\\\\s+')) {
+      return { sources, summary: `Collapse repeated spaces in ${sourceText || 'the source text'} and trim leading or trailing spaces.` };
+    }
     if (/^gsub\(/.test(text)) {
       return { sources, summary: `Replace every matching piece of text in ${sourceText || 'the source column'}.` };
     }
@@ -998,6 +1067,15 @@ const TV = (() => {
     }
     if (/tools::toTitleCase\(/.test(text)) {
       return { sources, summary: `Convert ${sourceText || 'the source text'} to title case.` };
+    }
+    if (/^toupper\(/.test(text)) {
+      return { sources, summary: `Convert ${sourceText || 'the source text'} to uppercase.` };
+    }
+    if (/^tolower\(/.test(text)) {
+      return { sources, summary: `Convert ${sourceText || 'the source text'} to lowercase.` };
+    }
+    if (/^format\(.+,"%B"\)/.test(text)) {
+      return { sources, summary: `Turn ${sourceText || 'the source date'} into a month label.` };
     }
     if (/^factor\(/.test(text)) {
       return { sources, summary: 'Turn the result into a factor, so it behaves like a categorical value.' };
@@ -1150,8 +1228,12 @@ const TV = (() => {
     if (!container) return;
     const row = document.createElement('div');
     row.id = `${prefix}-case-row-${id}`;
-    row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 28px;gap:8px;align-items:start;margin-bottom:8px';
+    row.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-bottom:10px;padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm);background:var(--md-surface)';
     row.innerHTML = `
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);font-weight:500">if / then rule</div>
+        <button type="button" onclick="TV.removeCaseWhenRow('${prefix}', '${id}')" style="width:26px;height:26px;border-radius:50%;border:none;background:transparent;color:var(--md-on-surface-variant);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0">x</button>
+      </div>
       <div>
         <div style="font-size:10px;color:var(--md-on-surface-variant);margin-bottom:4px;font-weight:500">when</div>
         <input class="tv-input" id="${prefix}-case-when-${id}" value="${escapeAttr(whenValue)}" placeholder="e.g. sex == 1" style="font-family:var(--tv-type-mono);font-size:12px" oninput="TV.syncCaseWhenBuilder('${prefix}')">
@@ -1159,8 +1241,7 @@ const TV = (() => {
       <div>
         <div style="font-size:10px;color:var(--md-on-surface-variant);margin-bottom:4px;font-weight:500">then</div>
         <input class="tv-input" id="${prefix}-case-then-${id}" value="${escapeAttr(thenValue)}" placeholder='e.g. "Male"' style="font-family:var(--tv-type-mono);font-size:12px" oninput="TV.syncCaseWhenBuilder('${prefix}')">
-      </div>
-      <button type="button" onclick="TV.removeCaseWhenRow('${prefix}', '${id}')" style="width:26px;height:26px;border-radius:50%;border:none;background:transparent;color:var(--md-on-surface-variant);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;margin-top:20px">x</button>`;
+      </div>`;
     container.appendChild(row);
     syncCaseWhenBuilder(prefix);
   }
@@ -1319,7 +1400,7 @@ const TV = (() => {
 
     const row = document.createElement('div');
     row.id = 'cond-' + id;
-    row.style.cssText = 'display:grid;grid-template-columns:1fr 110px 1fr 30px;gap:6px;align-items:center;margin-bottom:8px';
+    row.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-bottom:10px;padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm);background:var(--md-surface)';
     row.innerHTML = `
       <select class="tv-select" style="padding:7px 10px;font-size:12px" id="col-${id}" onchange="TV.updateFilterConditionsPreview()">${window.__colOpts}</select>
       <select class="tv-select" style="padding:7px 8px;font-size:12px" id="op-${id}" onchange="TV.updateFilterConditionsPreview()">
@@ -1629,6 +1710,7 @@ const TV = (() => {
 
   function renderMutatePanel(pane) {
     if (!state.dt) return;
+    const sourceExprToLabel = new Map(state.dt.map(c => [rName(c.name), c.name]));
     const helperColOpts = state.dt.map(c => `<option value="${escapeAttr(rName(c.name))}">${escapeHtml(c.name)}</option>`).join('');
     const numericColOpts = state.dt
       .filter(c => ['int', 'dbl'].includes(c.type))
@@ -1648,7 +1730,7 @@ const TV = (() => {
     });
     const helperHtml = `
       <div style="margin-top:10px;padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm);background:var(--md-surface-variant)">
-        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:8px;font-weight:500">common helpers</div>
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:8px;font-weight:500">helper recipes and builders</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
           <button class="tv-chip selected" id="mut-helper-manual">manual</button>
           <button class="tv-chip" id="mut-helper-convert">conversion</button>
@@ -1663,13 +1745,29 @@ const TV = (() => {
 
         <div id="mut-helper-manual-panel" style="font-size:11px;color:var(--md-on-surface-variant);line-height:1.6">
           <div style="margin-bottom:8px">
-            Start with a column, a function, or one of these example patterns. Replace the sample column names with your own if needed.
+            Start from a quick recipe, or type the formula yourself. These recipe buttons switch to the matching helper and prefill the common setup for you.
           </div>
+          <div style="font-size:10px;color:var(--md-on-surface-variant);margin-bottom:4px;font-weight:500">numeric and unit conversions</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+            <button type="button" class="tv-chip" data-mut-recipe="convert:cm_to_in">cm -&gt; inches</button>
+            <button type="button" class="tv-chip" data-mut-recipe="convert:kg_to_lb">kg -&gt; pounds</button>
+            <button type="button" class="tv-chip" data-mut-recipe="convert:prop_to_pct">ratio -&gt; percent</button>
+            <button type="button" class="tv-chip" data-mut-recipe="convert:pct_to_prop">percent -&gt; proportion</button>
+          </div>
+          <div style="font-size:10px;color:var(--md-on-surface-variant);margin-bottom:4px;font-weight:500">text cleanup recipes</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+            <button type="button" class="tv-chip" data-mut-recipe="string:trim">trim spaces</button>
+            <button type="button" class="tv-chip" data-mut-recipe="string:title">title case</button>
+            <button type="button" class="tv-chip" data-mut-recipe="string:upper">UPPER CASE</button>
+            <button type="button" class="tv-chip" data-mut-recipe="string:lower">lower case</button>
+            <button type="button" class="tv-chip" data-mut-recipe="string:remove_punct">remove punctuation</button>
+            <button type="button" class="tv-chip" data-mut-recipe="string:collapse_spaces">collapse spaces</button>
+          </div>
+          <div style="font-size:10px;color:var(--md-on-surface-variant);margin-bottom:4px;font-weight:500">date helpers</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button type="button" class="tv-chip" onclick="TV.insertExpr('mut-expr', 'round(height / 2.54, 1)')">cm -&gt; inches</button>
-            <button type="button" class="tv-chip" onclick="TV.insertExpr('mut-expr', 'round(mass * 2.205, 1)')">kg -&gt; pounds</button>
-            <button type="button" class="tv-chip" onclick="TV.insertExpr('mut-expr', 'trimws(as.character(name))')">trim text</button>
-            <button type="button" class="tv-chip" onclick="TV.insertExpr('mut-expr', 'data.table::fifelse(is.na(x), 0, x)')">fill missing</button>
+            <button type="button" class="tv-chip" data-mut-recipe="date:year">extract year</button>
+            <button type="button" class="tv-chip" data-mut-recipe="date:month_label">month label</button>
+            <button type="button" class="tv-chip" data-mut-recipe="date:age_years">age in years</button>
           </div>
         </div>
 
@@ -1798,6 +1896,7 @@ const TV = (() => {
                 <option value="parse_date">parse as Date</option>
                 <option value="year">extract year</option>
                 <option value="month">extract month</option>
+                <option value="month_label">month label</option>
                 <option value="day">extract day</option>
                 <option value="year_month">year-month text</option>
                 <option value="age_years">age in years</option>
@@ -1836,6 +1935,10 @@ const TV = (() => {
                 <option value="remove">remove text</option>
                 <option value="trim">trim whitespace</option>
                 <option value="title">title case</option>
+                <option value="upper">UPPER CASE</option>
+                <option value="lower">lower case</option>
+                <option value="remove_punct">remove punctuation</option>
+                <option value="collapse_spaces">collapse repeated spaces</option>
               </select>
             </div>
           </div>
@@ -1977,7 +2080,122 @@ const TV = (() => {
 
     const nameEl = $('mut-name'), exprEl = $('mut-expr');
     let helperMode = 'manual';
+    let autoSuggestedName = '';
     window.__mutateHelperState = { mode: 'manual', acrossCols: [] };
+    const helperSourceLabel = sourceExpr => sourceExprToLabel.get(sourceExpr) || String(sourceExpr || '').replace(/^`|`$/g, '');
+    const firstOptionValue = id => {
+      const el = $(id);
+      if (!el || !el.options) return '';
+      return Array.from(el.options).map(option => option.value).find(Boolean) || '';
+    };
+    const ensureSelectValue = id => {
+      const el = $(id);
+      if (!el) return '';
+      if (!el.value) el.value = firstOptionValue(id);
+      return el.value || '';
+    };
+    const sanitizeTargetBase = name => {
+      const base = String(name || '')
+        .replace(/^`|`$/g, '')
+        .replace(/[^A-Za-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .replace(/_+/g, '_')
+        .toLowerCase();
+      if (!base) return 'new_value';
+      return /^[0-9]/.test(base) ? `x_${base}` : base;
+    };
+    const suggestTargetName = (sourceExpr, suffix) => {
+      if (!nameEl || !suffix) return;
+      const current = nameEl.value.trim();
+      if (current && current !== autoSuggestedName) return;
+      const source = helperSourceLabel(sourceExpr);
+      const next = `${sanitizeTargetBase(source)}_${suffix}`;
+      autoSuggestedName = next;
+      nameEl.value = next;
+      nameEl.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    const helperSpecificSummary = () => {
+      if (helperMode === 'convert') {
+        const sourceExpr = $('mut-convert-source')?.value?.trim() || '';
+        const source = helperSourceLabel(sourceExpr);
+        const kind = $('mut-convert-kind')?.value || 'cm_to_in';
+        const digits = Math.max(0, parseInt($('mut-convert-digits')?.value || '1', 10) || 0);
+        if (!source) return null;
+        const digitsText = digits === 0 ? 'a whole number' : `${digits} decimal place${digits === 1 ? '' : 's'}`;
+        const actions = {
+          cm_to_in: `convert "${source}" from centimeters to inches`,
+          in_to_cm: `convert "${source}" from inches to centimeters`,
+          kg_to_lb: `convert "${source}" from kilograms to pounds`,
+          lb_to_kg: `convert "${source}" from pounds to kilograms`,
+          m_to_ft: `convert "${source}" from meters to feet`,
+          ft_to_m: `convert "${source}" from feet to meters`,
+          prop_to_pct: `turn "${source}" from a proportion into a percent`,
+          pct_to_prop: `turn "${source}" from a percent into a proportion`,
+        };
+        return {
+          sources: [source],
+          summary: `This recipe will ${actions[kind] || `transform "${source}"`} and round the result to ${digitsText}.`,
+        };
+      }
+      if (helperMode === 'date') {
+        const sourceExpr = $('mut-date-source')?.value?.trim() || '';
+        const source = helperSourceLabel(sourceExpr);
+        const dateMode = $('mut-date-mode')?.value || 'parse_idate';
+        if (!source) return null;
+        const actions = {
+          parse_idate: `parse "${source}" as an IDate value`,
+          parse_date: `parse "${source}" as a Date value`,
+          year: `extract the year from "${source}"`,
+          month: `extract the month number from "${source}"`,
+          month_label: `turn "${source}" into a month label`,
+          day: `extract the day of the month from "${source}"`,
+          year_month: `turn "${source}" into year-month text`,
+          age_years: `calculate age in years from "${source}"`,
+        };
+        return {
+          sources: [source],
+          summary: `This helper will ${actions[dateMode] || `transform "${source}"`} for each row.`,
+        };
+      }
+      if (helperMode === 'string') {
+        const sourceExpr = $('mut-string-source')?.value?.trim() || '';
+        const source = helperSourceLabel(sourceExpr);
+        const stringMode = $('mut-string-mode')?.value || 'detect';
+        const pattern = $('mut-string-pattern')?.value || '';
+        const replacement = $('mut-string-replacement')?.value || '';
+        if (!source) return null;
+        if (stringMode === 'trim') {
+          return { sources: [source], summary: `This recipe will trim extra spaces from "${source}".` };
+        }
+        if (stringMode === 'title') {
+          return { sources: [source], summary: `This recipe will convert "${source}" to title case.` };
+        }
+        if (stringMode === 'upper') {
+          return { sources: [source], summary: `This recipe will convert "${source}" to uppercase.` };
+        }
+        if (stringMode === 'lower') {
+          return { sources: [source], summary: `This recipe will convert "${source}" to lowercase.` };
+        }
+        if (stringMode === 'remove_punct') {
+          return { sources: [source], summary: `This recipe will remove punctuation from "${source}".` };
+        }
+        if (stringMode === 'collapse_spaces') {
+          return { sources: [source], summary: `This recipe will collapse repeated spaces in "${source}" and trim the result.` };
+        }
+        if (!pattern) return null;
+        if (stringMode === 'detect') {
+          return { sources: [source], summary: `This helper will return TRUE or FALSE depending on whether "${source}" matches the pattern "${pattern}".` };
+        }
+        if (stringMode === 'extract') {
+          return { sources: [source], summary: `This helper will extract text from "${source}" using the pattern "${pattern}"${replacement ? ` and replacement "${replacement}"` : ''}.` };
+        }
+        if (stringMode === 'remove') {
+          return { sources: [source], summary: `This helper will remove text from "${source}" wherever it matches "${pattern}".` };
+        }
+        return { sources: [source], summary: `This helper will replace text in "${source}" where it matches "${pattern}".` };
+      }
+      return null;
+    };
     const update = () => {
       const p = $('mut-preview');
       const targetEl = $('mut-target-summary');
@@ -2003,7 +2221,7 @@ const TV = (() => {
       const n = currentName || '<name>';
       const e = exprEl?.value || '<expr>';
       p.textContent = `mutate(.data, ${n} = ${e})`;
-      const english = humanizeMutateExpr(exprEl?.value || '', state.dt || []);
+      const english = helperSpecificSummary() || humanizeMutateExpr(exprEl?.value || '', state.dt || []);
       const sourceSummary = english.sources.length ? `Source columns: ${english.sources.join(', ')}` : 'Source columns: none detected yet.';
       if (targetEl) targetEl.textContent = currentName ? `Result column: create or update "${currentName}".` : 'Result column: choose a name above.';
       if (sourceEl) sourceEl.textContent = sourceSummary;
@@ -2013,6 +2231,60 @@ const TV = (() => {
       if (!exprEl) return;
       exprEl.value = expr;
       exprEl.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    const applyRecipe = recipe => {
+      if (!recipe) return;
+      const parts = String(recipe).split(':');
+      const group = parts[0];
+      const action = parts[1] || '';
+      if (group === 'convert') {
+        setHelperMode('convert');
+        const sourceExpr = ensureSelectValue('mut-convert-source');
+        if ($('mut-convert-kind')) $('mut-convert-kind').value = action || 'cm_to_in';
+        const suffixMap = {
+          cm_to_in: 'in',
+          in_to_cm: 'cm',
+          kg_to_lb: 'lb',
+          lb_to_kg: 'kg',
+          m_to_ft: 'ft',
+          ft_to_m: 'm',
+          prop_to_pct: 'pct',
+          pct_to_prop: 'prop',
+        };
+        suggestTargetName(sourceExpr, suffixMap[action] || 'calc');
+        syncHelper();
+        return;
+      }
+      if (group === 'string') {
+        setHelperMode('string');
+        const sourceExpr = ensureSelectValue('mut-string-source');
+        if ($('mut-string-mode')) $('mut-string-mode').value = action || 'trim';
+        if ($('mut-string-pattern')) $('mut-string-pattern').value = '';
+        if ($('mut-string-replacement')) $('mut-string-replacement').value = '';
+        const suffixMap = {
+          trim: 'trim',
+          title: 'title',
+          upper: 'upper',
+          lower: 'lower',
+          remove_punct: 'clean',
+          collapse_spaces: 'clean',
+        };
+        suggestTargetName(sourceExpr, suffixMap[action] || 'text');
+        syncHelper();
+        return;
+      }
+      if (group === 'date') {
+        setHelperMode('date');
+        const sourceExpr = ensureSelectValue('mut-date-source');
+        if ($('mut-date-mode')) $('mut-date-mode').value = action || 'year';
+        const suffixMap = {
+          year: 'year',
+          month_label: 'month',
+          age_years: 'age',
+        };
+        suggestTargetName(sourceExpr, suffixMap[action] || 'date');
+        syncHelper();
+      }
     };
     const syncHelper = () => {
       if (!exprEl) return;
@@ -2106,6 +2378,10 @@ const TV = (() => {
           setExpr(`as.integer(format(${parsedDateExpr}, "%m"))`);
           return;
         }
+        if (dateMode === 'month_label') {
+          setExpr(`format(${parsedDateExpr}, "%B")`);
+          return;
+        }
         if (dateMode === 'day') {
           setExpr(`as.integer(format(${parsedDateExpr}, "%d"))`);
           return;
@@ -2127,9 +2403,10 @@ const TV = (() => {
         const patternWrap = $('mut-string-pattern-wrap');
         const replacementWrap = $('mut-string-replacement-wrap');
         const ignoreCaseWrap = $('mut-string-ignore-case-wrap');
-        if (patternWrap) patternWrap.style.display = ['trim', 'title'].includes(stringMode) ? 'none' : '';
+        const noPatternModes = ['trim', 'title', 'upper', 'lower', 'remove_punct', 'collapse_spaces'];
+        if (patternWrap) patternWrap.style.display = noPatternModes.includes(stringMode) ? 'none' : '';
         if (replacementWrap) replacementWrap.style.display = ['replace', 'extract'].includes(stringMode) ? '' : 'none';
-        if (ignoreCaseWrap) ignoreCaseWrap.style.display = ['trim', 'title'].includes(stringMode) ? 'none' : 'flex';
+        if (ignoreCaseWrap) ignoreCaseWrap.style.display = noPatternModes.includes(stringMode) ? 'none' : 'flex';
         if (!source) {
           setExpr('');
           return;
@@ -2140,6 +2417,22 @@ const TV = (() => {
         }
         if (stringMode === 'title') {
           setExpr(`tools::toTitleCase(tolower(${sourceExpr}))`);
+          return;
+        }
+        if (stringMode === 'upper') {
+          setExpr(`toupper(${sourceExpr})`);
+          return;
+        }
+        if (stringMode === 'lower') {
+          setExpr(`tolower(${sourceExpr})`);
+          return;
+        }
+        if (stringMode === 'remove_punct') {
+          setExpr(`gsub("[[:punct:]]+", "", ${sourceExpr}, perl = TRUE)`);
+          return;
+        }
+        if (stringMode === 'collapse_spaces') {
+          setExpr(`trimws(gsub("\\\\s+", " ", ${sourceExpr}, perl = TRUE))`);
           return;
         }
         if (!pattern) {
@@ -2243,6 +2536,9 @@ const TV = (() => {
     };
     $('mut-mode-expression')?.addEventListener('click', () => setMode('expression'));
     $('mut-mode-case')?.addEventListener('click', () => setMode('case'));
+    pane.querySelectorAll('[data-mut-recipe]').forEach(btn => {
+      btn.addEventListener('click', () => applyRecipe(btn.dataset.mutRecipe));
+    });
     $('mut-helper-manual')?.addEventListener('click', () => setHelperMode('manual'));
     $('mut-helper-convert')?.addEventListener('click', () => setHelperMode('convert'));
     $('mut-helper-ifelse')?.addEventListener('click', () => setHelperMode('ifelse'));
@@ -2367,6 +2663,18 @@ const TV = (() => {
         <select class="tv-select" id="grp-add" onchange="TV.addGroupCol(this.value);this.value=''">
           <option value="">add grouping column…</option>${allOpts}
         </select>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-top:6px;line-height:1.5">
+          Each unique group becomes one summary row in the result.
+        </div>
+      </div>
+      <div class="tv-field" style="margin-top:0">
+        <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--md-on-surface);cursor:pointer;line-height:1.5">
+          <input type="checkbox" id="sum-ignore-missing" style="margin-top:2px">
+          <span>
+            <strong style="font-weight:500">ignore missing values</strong><br>
+            <span style="font-size:11px;color:var(--md-on-surface-variant)">Use <code>na.rm = TRUE</code> for numeric summaries like mean, sum, median, min, max, sd, and var.</span>
+          </span>
+        </label>
       </div>
       <div style="padding:10px 12px;border:1px solid var(--md-outline-variant);border-radius:var(--tv-radius-sm);margin-bottom:12px;background:var(--md-surface-variant)">
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--md-on-surface-variant);margin-bottom:8px;font-weight:500">across</div>
@@ -2379,6 +2687,9 @@ const TV = (() => {
           <select class="tv-select" id="sum-across-add" onchange="TV.addSummariseAcrossCol(this.value);this.value=''">
             <option value="">add column...</option>${allOpts}
           </select>
+          <div style="font-size:11px;color:var(--md-on-surface-variant);margin-top:6px;line-height:1.5">
+            Pick the columns that should all use the same summary rule.
+          </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <div>
@@ -2386,6 +2697,9 @@ const TV = (() => {
             <select class="tv-select" id="sum-across-fn" style="font-size:12px">
               ${fns.map(f => `<option value="${f}">${f}</option>`).join('')}
             </select>
+            <div style="font-size:10px;color:var(--md-on-surface-variant);margin-top:4px;line-height:1.5">
+              Choose the statistic to calculate for each selected column.
+            </div>
           </div>
           <div>
             <div style="font-size:10px;color:var(--md-on-surface-variant);margin-bottom:4px;font-weight:500">output names</div>
@@ -2393,6 +2707,9 @@ const TV = (() => {
               <option value="fn_col">fn_col</option>
               <option value="col_fn">col_fn</option>
             </select>
+            <div style="font-size:10px;color:var(--md-on-surface-variant);margin-top:4px;line-height:1.5">
+              <code>fn_col</code> gives names like <code>mean_height</code>. <code>col_fn</code> gives <code>height_mean</code>.
+            </div>
           </div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
@@ -2401,6 +2718,9 @@ const TV = (() => {
       </div>
       <div class="tv-field">
         <label class="tv-field-label">aggregations</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-top:-2px;margin-bottom:8px;line-height:1.5">
+          Use these rows when each summary needs its own output name, function, or source column.
+        </div>
         <div id="agg-list"></div>
         <button class="tv-add-btn" onclick="TV.addAggRow()">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="7" y1="2" x2="7" y2="12"/><line x1="2" y1="7" x2="12" y2="7"/></svg>
@@ -2461,13 +2781,14 @@ const TV = (() => {
     const cols = window.__sumAcrossCols || [];
     const fn = $('sum-across-fn')?.value || 'sum';
     const namesMode = $('sum-across-names')?.value || 'fn_col';
+    const na_rm = $('sum-ignore-missing')?.checked === true;
     if (!cols.length) {
       showMessage('Choose at least one column for across.', { title: 'Summarise Incomplete' });
       return;
     }
     cols.forEach(col => {
       const output = namesMode === 'col_fn' ? `${col}_${fn}` : `${fn}_${col}`;
-      addAggRow({ output, fn, col });
+      addAggRow({ output, fn, col, na_rm });
     });
   }
 
@@ -2479,18 +2800,23 @@ const TV = (() => {
     const outVal = initial?.output || '';
     const fnVal = initial?.fn || 'sum';
     const colVal = initial?.col || (state.dt[0]?.name || '');
+    const naRmVal = initial?.na_rm === true || (!initial && $('sum-ignore-missing')?.checked === true);
     const row  = document.createElement('div');
     row.id     = 'agg-' + id;
-    row.style.cssText = 'display:grid;grid-template-columns:1fr 90px 1fr 30px;gap:6px;align-items:center;margin-bottom:8px';
+    row.style.cssText = 'display:grid;grid-template-columns:92px minmax(0,1fr) 30px;gap:6px;align-items:start;margin-bottom:10px';
     row.innerHTML = `
-      <input class="tv-input" id="agg-out-${id}" placeholder="output name" value="${escapeAttr(outVal)}" style="padding:7px 10px;font-size:12px;font-family:var(--tv-type-mono)">
-      <select class="tv-select" id="agg-fn-${id}" style="padding:7px 8px;font-size:12px">
+      <input class="tv-input" id="agg-out-${id}" placeholder="output name" value="${escapeAttr(outVal)}" style="grid-column:1 / span 3;padding:7px 10px;font-size:12px;font-family:var(--tv-type-mono);min-width:0">
+      <select class="tv-select" id="agg-fn-${id}" style="grid-column:1;padding:7px 8px;font-size:12px;min-width:0">
         ${['sum','mean','median','min','max','sd','n','n_distinct'].map(f=>`<option value="${f}" ${f === fnVal ? 'selected' : ''}>${f}</option>`).join('')}
       </select>
-      <select class="tv-select" id="agg-col-${id}" style="padding:7px 10px;font-size:12px">
+      <select class="tv-select" id="agg-col-${id}" style="grid-column:2;padding:7px 10px;font-size:12px;min-width:0">
         ${state.dt.map(c=>`<option value="${c.name}" ${c.name === colVal ? 'selected' : ''}>${c.name}</option>`).join('')}
       </select>
-      <button onclick="document.getElementById('agg-${id}').remove()" style="width:28px;height:28px;border-radius:50%;border:none;background:transparent;cursor:pointer;color:var(--md-on-surface-variant);font-size:16px;display:flex;align-items:center;justify-content:center">✕</button>`;
+      <label style="grid-column:1 / span 2;display:flex;align-items:center;gap:6px;font-size:11px;color:var(--md-on-surface-variant);cursor:pointer;line-height:1.4;padding-left:2px">
+        <input type="checkbox" id="agg-na-rm-${id}" ${naRmVal ? 'checked' : ''}>
+        ignore NA
+      </label>
+      <button onclick="document.getElementById('agg-${id}').remove()" style="grid-column:3;grid-row:2 / span 2;width:28px;height:28px;border-radius:50%;border:none;background:transparent;cursor:pointer;color:var(--md-on-surface-variant);font-size:16px;display:flex;align-items:center;justify-content:center;align-self:start">✕</button>`;
     list.appendChild(row);
   }
 
@@ -2501,6 +2827,7 @@ const TV = (() => {
         output: $('agg-out-' + id)?.value  || $('agg-fn-' + id)?.value + '_' + $('agg-col-' + id)?.value,
         fn:     $('agg-fn-'  + id)?.value,
         col:    $('agg-col-' + id)?.value,
+        na_rm:  $('agg-na-rm-' + id)?.checked === true,
       }));
     if (!aggregations.length) { await showMessage('Add at least one aggregation.', { title: 'Summarise Incomplete' }); return; }
     try {
@@ -3396,6 +3723,7 @@ const TV = (() => {
     panels: {},
     api,
     init, renderTable, renderHistory, sortBy, changePage, openPanel, closePanel,
+    consumePanelContext, openPanelForColumns,
     pushCode, setHistory, updateDimLabel, undo,
     updateSourceChip, expressionBuilderHtml, mutateExpressionBuilderHtml, insertExpr, insertExprFromButton, openCellValue, closeCellValue,
     openAppDialog, closeAppDialog, showMessage, showError, confirmMessage,

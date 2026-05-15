@@ -4,6 +4,171 @@
 TV.panels = TV.panels || {};
 
 TV.panels.help = function(pane) {
+  const quickStart = [
+    {
+      title: '1. Load data',
+      description: 'Start by loading a table from the R environment or from a file.',
+      panel: 'load',
+      terms: ['import', 'environment', 'csv', 'xlsx', 'rds', 'rcdf']
+    },
+    {
+      title: '2. Inspect quality',
+      description: 'Use columns, audit, and missing to understand the shape of the data before changing it.',
+      panel: 'audit',
+      terms: ['schema', 'missing', 'duplicates', 'top values']
+    },
+    {
+      title: '3. Clean and transform',
+      description: 'Filter rows, recode values, mutate columns, and validate rules until the table is ready.',
+      panel: 'mutate',
+      terms: ['filter', 'mutate', 'recode', 'validate']
+    },
+    {
+      title: '4. Summarise or reshape',
+      description: 'Create grouped summaries, counts, pivots, joins, or comparisons for the question you need to answer.',
+      panel: 'summarise',
+      terms: ['summarise', 'count', 'pivot', 'join', 'compare']
+    },
+    {
+      title: '5. Export results',
+      description: 'Write the cleaned result to CSV, Excel, RDS, SPSS, or Stata when you are done.',
+      panel: 'export',
+      terms: ['save', 'export', 'csv', 'xlsx']
+    }
+  ];
+
+  const workflows = [
+    {
+      title: 'Audit a new dataset',
+      goal: 'Understand what is in the table before you clean or summarise it.',
+      panels: ['columns', 'audit', 'missing', 'validate'],
+      steps: 'Load the table, inspect column types, review duplicates and top values, then focus on missing values or validation rules.',
+      tip: 'This is the safest first pass for unfamiliar files.'
+    },
+    {
+      title: 'Clean categories and missing values',
+      goal: 'Standardize labels and decide how to handle blanks or NA values.',
+      panels: ['recode', 'factors', 'replace_na', 'drop_na'],
+      steps: 'Recode obvious label variants, collapse or reorder levels, fill missing values where appropriate, and drop incomplete rows only when needed.',
+      tip: 'Use validate afterward if you want explicit pass/fail rules.'
+    },
+    {
+      title: 'Prepare area summaries',
+      goal: 'Turn raw records into grouped counts or averages by region, province, municipality, or barangay.',
+      panels: ['area names', 'summarise', 'count', 'pivot'],
+      steps: 'Add readable PSGC names, group and summarise the data, then pivot the result wider if you need report-ready columns.',
+      tip: 'Area names uses the bundled PSGC lookup inside tidyview.'
+    },
+    {
+      title: 'Compare before and after',
+      goal: 'Check what changed between two versions of the same dataset.',
+      panels: ['compare', 'audit', 'missing'],
+      steps: 'Open or load both datasets, compare them using a stable key, then inspect changed rows and follow up with audit or missing if needed.',
+      tip: 'This is useful after imports, merges, or manual corrections.'
+    },
+    {
+      title: 'Build tables or charts for reporting',
+      goal: 'Create tabulations, cross tabs, or simple plots without leaving the app.',
+      panels: ['count', 'tabulate', 'crosstab', 'plot', 'export'],
+      steps: 'Choose the simplest summary tool that answers the question, review the generated R, then export the result or save the plot code.',
+      tip: 'Plot suggestions now try to choose sensible CBMS-style fields automatically.'
+    }
+  ];
+
+  const chooser = [
+    {
+      prompt: 'I want to inspect the data before I touch it.',
+      recommendation: 'Use columns, audit, and missing first.',
+      why: 'These panels tell you what columns exist, where duplicates or missing values appear, and which fields need attention.'
+    },
+    {
+      prompt: 'I want to keep only certain rows.',
+      recommendation: 'Use filter.',
+      why: 'Filter keeps rows that match conditions, text helpers, regex rules, or numeric/date ranges.'
+    },
+    {
+      prompt: 'I want to create or transform a column.',
+      recommendation: 'Use mutate or recode.',
+      why: 'Mutate is best for formulas and helper builders. Recode is best for relabeling values into categories.'
+    },
+    {
+      prompt: 'I want to check whether the data passes rules.',
+      recommendation: 'Use validate.',
+      why: 'Validate gives pass/fail counts for required values, unique IDs, allowed values, regex rules, ranges, and date checks.'
+    },
+    {
+      prompt: 'I want grouped totals, counts, or averages.',
+      recommendation: 'Use summarise or count.',
+      why: 'Count is quickest for frequencies. Summarise is better when you need custom statistics or multiple outputs.'
+    },
+    {
+      prompt: 'I want to combine this table with another one.',
+      recommendation: 'Use join or combine.',
+      why: 'Join matches rows by keys. Combine stacks tables by rows or binds them side by side by columns.'
+    },
+    {
+      prompt: 'I want to reshape repeated columns or create report-ready columns.',
+      recommendation: 'Use pivot.',
+      why: 'Pivot longer stacks repeated columns into rows, while pivot wider turns category values into columns.'
+    },
+    {
+      prompt: 'I want to save the result or hand it off.',
+      recommendation: 'Use export.',
+      why: 'Export writes CSV, TSV, Excel, RDS, SPSS, or Stata files and previews the destination before writing.'
+    }
+  ];
+
+  const examples = [
+    {
+      title: 'Summarise average age by category',
+      scenario: 'You want one row per group with a record count and an average age or score.',
+      panels: ['summarise'],
+      steps: 'Choose the grouping column first, then add a count with n on a record identifier plus an average with mean on a numeric field using ignore missing values.',
+      snippet: 'group by: department\\naggregation: n_records / n / record_id\\naggregation: avg_age / mean / age',
+      tip: 'This pattern works for regions, departments, teams, schools, products, or any other grouping field.'
+    },
+    {
+      title: 'Standardize yes/no answers before tabulation',
+      scenario: 'A survey field contains values like yes, YES, Y, no, No, and blanks.',
+      panels: ['recode', 'validate', 'tabulate'],
+      steps: 'Open recode, choose the yes/no cleanup recipe, save the result to a new column, then use validate allowed values if you want a strict check before tabulation.',
+      snippet: 'recode recipe: yes / no cleanup\\nnew column: consent_clean\\nvalidate allowed values: Yes, No',
+      tip: 'Keeping the cleaned result in a new column makes before/after comparisons easier.'
+    },
+    {
+      title: 'Join a lookup table by code',
+      scenario: 'You have a main table with codes and another table with descriptions you want to bring in.',
+      panels: ['join', 'compare'],
+      steps: 'Open join, choose the lookup table, match the code columns, and review the join preview for unmatched or duplicated keys before apply.',
+      snippet: 'join type: keep all current rows\\nkey: code = code_lookup\\nreview unmatched and duplicate-key warnings before apply',
+      tip: 'If the row count grows unexpectedly, the join preview usually points to duplicate keys.'
+    },
+    {
+      title: 'Pivot monthly columns into a long table',
+      scenario: 'Your table has columns like jan_sales, feb_sales, and mar_sales that should become rows.',
+      panels: ['pivot'],
+      steps: 'Open pivot longer, use the suggested split, keep the identifier columns, and stack the repeated month columns into variable and value.',
+      snippet: 'id columns: region\\nmeasure columns: jan_sales, feb_sales, mar_sales\\noutput: variable + value',
+      tip: 'Long format is easier for grouped summaries, plots, and many exports.'
+    },
+    {
+      title: 'Check IDs, missing values, and ranges',
+      scenario: 'You want to confirm that required fields are filled, IDs are unique, and ages stay in range.',
+      panels: ['validate', 'missing'],
+      steps: 'Add a required field rule for the ID column, a unique ID rule for the same field, and a numeric range rule for age. Then review the failed rows and use missing for deeper inspection.',
+      snippet: 'required field: record_id\\nunique ID: record_id\\nnumeric range: age 0 to 120',
+      tip: 'Validate is best for explicit pass/fail checks. Missing is better for broader exploration.'
+    },
+    {
+      title: 'Add readable labels from code columns',
+      scenario: 'Your table has short codes, and you want to attach readable names before summarising or exporting.',
+      panels: ['join', 'area names'],
+      steps: 'If you already have a lookup table, use join to match codes to names. If the codes are PSGC area codes, use area names to add the corresponding region, province, municipality, or barangay labels.',
+      snippet: 'lookup join: code -> code_lookup\\noutput: code_name\\nOR\\narea names: existing area_code -> province_name',
+      tip: 'Readable labels make tables, plots, and exports much easier for other people to understand.'
+    }
+  ];
+
   const sections = [
     {
       title: 'Core workflow',
@@ -230,7 +395,7 @@ TV.panels.help = function(pane) {
           panel: 'psgc',
           functions: ['tv_get_psgc()', 'tv_join_psgc()'],
           terms: ['phscs', 'psgc', 'province', 'municipality', 'barangay'],
-          definition: 'Add PSGC or area-name information using the phscs integration.',
+          definition: 'Add PSGC or area-name information using tidyview\'s bundled PSGC lookup.',
           usage: 'Helpful when you need readable province, municipality, or barangay labels.',
           example: 'DT <- merge(DT, area_reference, by = "area_code", all.x = TRUE)',
         },
@@ -340,6 +505,22 @@ TV.panels.help = function(pane) {
     ].join(' ').toLowerCase();
   }
 
+  function quickStartSearchText(item) {
+    return [item.title, item.description, item.panel, ...(item.terms || [])].join(' ').toLowerCase();
+  }
+
+  function workflowSearchText(item) {
+    return [item.title, item.goal, item.steps, item.tip, ...(item.panels || [])].join(' ').toLowerCase();
+  }
+
+  function chooserSearchText(item) {
+    return [item.prompt, item.recommendation, item.why].join(' ').toLowerCase();
+  }
+
+  function exampleSearchText(item) {
+    return [item.title, item.scenario, item.steps, item.snippet, item.tip, ...(item.panels || [])].join(' ').toLowerCase();
+  }
+
   function shortcutSearchText(item) {
     return [
       item.action,
@@ -365,8 +546,68 @@ TV.panels.help = function(pane) {
       </div>`;
   }
 
+  function renderQuickStartCard(item) {
+    return `
+      <div class="tv-help-feature-card">
+        <div class="tv-help-feature-head">
+          <div class="tv-help-feature-title">${TV.escapeHtml(item.title)}</div>
+          <button class="tv-chip" type="button" onclick="TV.openPanel('${item.panel}')">open</button>
+        </div>
+        <div class="tv-help-feature-body">${TV.escapeHtml(item.description)}</div>
+        <div class="tv-help-terms">${(item.terms || []).map(term => `<span class="tv-help-term">${TV.escapeHtml(term)}</span>`).join('')}</div>
+      </div>`;
+  }
+
+  function renderWorkflowCard(item) {
+    return `
+      <div class="tv-help-workflow-card">
+        <div class="tv-help-card-head">
+          <div class="tv-help-card-title">${TV.escapeHtml(item.title)}</div>
+        </div>
+        <div class="tv-help-card-sub">${TV.escapeHtml(item.goal)}</div>
+        <label class="tv-help-label">suggested panels</label>
+        <div class="tv-help-terms">${(item.panels || []).map(panel => `<button class="tv-help-link-chip" type="button" onclick="TV.openPanel('${panel}')">${TV.escapeHtml(panel)}</button>`).join('')}</div>
+        <label class="tv-help-label">workflow</label>
+        <div class="tv-help-card-sub">${TV.escapeHtml(item.steps)}</div>
+        <label class="tv-help-label">tip</label>
+        <div class="tv-help-callout">${TV.escapeHtml(item.tip)}</div>
+      </div>`;
+  }
+
+  function renderChooserCard(item) {
+    return `
+      <div class="tv-help-chooser-card">
+        <div class="tv-help-label">when you are thinking</div>
+        <div class="tv-help-chooser-prompt">${TV.escapeHtml(item.prompt)}</div>
+        <div class="tv-help-label">start with</div>
+        <div class="tv-help-chooser-answer">${TV.escapeHtml(item.recommendation)}</div>
+        <div class="tv-help-chooser-why">${TV.escapeHtml(item.why)}</div>
+      </div>`;
+  }
+
+  function renderExampleCard(item) {
+    return `
+      <div class="tv-help-example-card">
+        <div class="tv-help-card-head">
+          <div class="tv-help-card-title">${TV.escapeHtml(item.title)}</div>
+        </div>
+        <div class="tv-help-card-sub">${TV.escapeHtml(item.scenario)}</div>
+        <label class="tv-help-label">start with</label>
+        <div class="tv-help-terms">${(item.panels || []).map(panel => `<button class="tv-help-link-chip" type="button" onclick="TV.openPanel('${panel}')">${TV.escapeHtml(panel)}</button>`).join('')}</div>
+        <label class="tv-help-label">example flow</label>
+        <div class="tv-help-card-sub">${TV.escapeHtml(item.steps)}</div>
+        <label class="tv-help-label">sample setup</label>
+        <code class="tv-help-code">${TV.escapeHtml(item.snippet)}</code>
+        <div class="tv-help-callout">${TV.escapeHtml(item.tip)}</div>
+      </div>`;
+  }
+
   function render(query) {
     const q = String(query || '').trim().toLowerCase();
+    const filteredQuickStart = q ? quickStart.filter(item => quickStartSearchText(item).includes(q)) : quickStart;
+    const filteredWorkflows = q ? workflows.filter(item => workflowSearchText(item).includes(q)) : workflows;
+    const filteredChooser = q ? chooser.filter(item => chooserSearchText(item).includes(q)) : chooser;
+    const filteredExamples = q ? examples.filter(item => exampleSearchText(item).includes(q)) : examples;
     const filteredSections = sections
       .map(section => ({
         title: section.title,
@@ -374,10 +615,16 @@ TV.panels.help = function(pane) {
       }))
       .filter(section => section.items.length);
     const filteredShortcuts = q ? shortcuts.filter(item => shortcutSearchText(item).includes(q)) : shortcuts;
-    const matchCount = filteredSections.reduce((sum, section) => sum + section.items.length, 0) + filteredShortcuts.length;
+    const matchCount =
+      filteredQuickStart.length +
+      filteredWorkflows.length +
+      filteredChooser.length +
+      filteredExamples.length +
+      filteredSections.reduce((sum, section) => sum + section.items.length, 0) +
+      filteredShortcuts.length;
     const searchSummary = q
       ? `${matchCount} match${matchCount === 1 ? '' : 'es'} for "${query}".`
-      : 'Search help topics, verbs, functions, or shortcuts.';
+      : 'Search quick starts, workflows, verbs, functions, or shortcuts.';
 
     pane.innerHTML = `
       <div class="tv-panel-header">
@@ -397,7 +644,7 @@ TV.panels.help = function(pane) {
 
       <div class="tv-panel-body">
         <div class="tv-help-intro">
-          tidyview lets you work through data step by step, while showing the equivalent paste-ready <code>data.table</code> code in the R script pane. Use the examples below as a quick reference for what each tool does and what kind of R it generates.
+          tidyview lets you work through data step by step while showing the equivalent paste-ready <code>data.table</code> code in the R script pane. This help panel is meant to support both first-time users and returning users: start with a quick workflow, search for a tool, or jump straight to the detailed verb reference.
         </div>
 
         <div class="tv-help-search-wrap">
@@ -408,10 +655,46 @@ TV.panels.help = function(pane) {
                 <path d="M13.2 13.2L17 17" stroke-linecap="round"></path>
               </svg>
             </span>
-            <input id="tv-help-search-input" type="text" placeholder="search help, verbs, functions, shortcuts..." value="${TV.escapeAttr(query || '')}">
+            <input id="tv-help-search-input" type="text" placeholder="search help, workflows, verbs, functions, shortcuts..." value="${TV.escapeAttr(query || '')}">
           </div>
           <div class="tv-help-search-meta">${TV.escapeHtml(searchSummary)}</div>
         </div>
+
+        ${filteredQuickStart.length ? `
+          <div class="tv-help-section">
+            <div class="tv-help-section-title">Quick start</div>
+            <div class="tv-help-feature-grid">
+              ${filteredQuickStart.map(renderQuickStartCard).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        ${filteredChooser.length ? `
+          <div class="tv-help-section">
+            <div class="tv-help-section-title">Choose the right tool</div>
+            <div class="tv-help-chooser-grid">
+              ${filteredChooser.map(renderChooserCard).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        ${filteredWorkflows.length ? `
+          <div class="tv-help-section">
+            <div class="tv-help-section-title">Common workflows</div>
+            <div class="tv-help-grid">
+              ${filteredWorkflows.map(renderWorkflowCard).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        ${filteredExamples.length ? `
+          <div class="tv-help-section">
+            <div class="tv-help-section-title">Worked examples</div>
+            <div class="tv-help-grid">
+              ${filteredExamples.map(renderExampleCard).join('')}
+            </div>
+          </div>
+        ` : ''}
 
         ${filteredSections.length ? filteredSections.map(section => `
           <div class="tv-help-section">
@@ -446,7 +729,7 @@ TV.panels.help = function(pane) {
 
       <div class="tv-panel-footer">
         <button class="tv-btn-outlined" onclick="TV.closePanel()">close</button>
-        <button class="tv-btn-filled" onclick="TV.copyToClipboard('F1 or Shift+? = help\\nCtrl/Cmd+K or / = search\\nCtrl/Cmd+Z = undo\\nCtrl/Cmd+Shift+C = copy R script\\nEsc = close panel\\nAlt+A/N/Y/V/L/F/S/M/G/J/C/P/O/T/X/R/H = open tools', 'keyboard shortcuts')">copy shortcuts</button>
+        <button class="tv-btn-filled" onclick="TV.copyToClipboard('Quick start:\\n1. load data\\n2. inspect with columns, audit, and missing\\n3. clean with filter, mutate, recode, or validate\\n4. summarise, count, pivot, join, or compare\\n5. export the result\\n\\nShortcuts:\\nF1 or Shift+? = help\\nCtrl/Cmd+K or / = search\\nCtrl/Cmd+Z = undo\\nCtrl/Cmd+Shift+C = copy R script\\nEsc = close panel\\nAlt+A/N/Y/V/L/F/S/M/G/J/C/P/O/T/X/R/H = open tools', 'help quick start')">copy quick start</button>
       </div>`;
 
     const input = pane.querySelector('#tv-help-search-input');

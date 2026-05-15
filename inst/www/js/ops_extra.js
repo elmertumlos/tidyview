@@ -22,6 +22,9 @@ TV.panels.slice = function(pane) {
     <div class="tv-panel-body">
       <div class="tv-field">
         <label class="tv-field-label">method</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Choose whether to keep the first rows, the last rows, or a random sample from the current table.
+        </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="tv-chip selected" id="slice-head"   onclick="TVSLICE.setType('head')">slice_head</button>
           <button class="tv-chip"          id="slice-tail"   onclick="TVSLICE.setType('tail')">slice_tail</button>
@@ -30,6 +33,9 @@ TV.panels.slice = function(pane) {
       </div>
       <div class="tv-field">
         <label class="tv-field-label">n (number of rows)</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Enter how many rows to keep or sample from the table.
+        </div>
         <input class="tv-input" id="slice-n" type="number" min="1" value="100"
           style="padding:7px 10px;font-size:13px" oninput="TVSLICE.updatePreview()">
       </div>
@@ -112,6 +118,9 @@ TV.panels.count = function(pane) {
       </div>
       <div class="tv-field">
         <label class="tv-field-label">group by columns</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Add columns when you want one count per category or combination instead of one overall total.
+        </div>
         <div id="count-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:28px"></div>
         <select class="tv-select" id="count-add" onchange="TVCOUNT.addCol(this.value);this.value=''">
           <option value="">add column…</option>${colOpts}
@@ -219,6 +228,9 @@ TV.panels.tabulate = function(pane) {
     <div class="tv-panel-body">
       <div class="tv-field">
         <label class="tv-field-label">column</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Choose the variable whose values should become the rows of the frequency table.
+        </div>
         <select class="tv-select" id="tab-col" onchange="TVTABULATE.updatePreview()">
           <option value="">choose column…</option>${colOpts}
         </select>
@@ -229,6 +241,9 @@ TV.panels.tabulate = function(pane) {
       </div>
       <div class="tv-field">
         <label class="tv-field-label">engine</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Use <code>data.table</code> for a simple programmable table, or <code>tsg</code> for a more formatted frequency output.
+        </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="tv-chip selected" id="tab-engine-dt" onclick="TVTABULATE.setEngine('data.table')">data.table</button>
           <button class="tv-chip" id="tab-engine-tsg" onclick="TVTABULATE.setEngine('tsg')">tsg</button>
@@ -236,6 +251,9 @@ TV.panels.tabulate = function(pane) {
       </div>
       <div class="tv-field" id="tab-weight-field">
         <label class="tv-field-label">weight expression (optional)</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Leave this empty for plain counts, or supply a numeric expression when each row should contribute a weight.
+        </div>
         <textarea class="tv-input" id="tab-weight" placeholder="leave empty for simple counts" style="font-family:var(--tv-type-mono);min-height:72px;resize:vertical" oninput="TVTABULATE.updatePreview()"></textarea>
         ${builder}
       </div>
@@ -383,12 +401,18 @@ TV.panels.crosstab = function(pane) {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div class="tv-field">
           <label class="tv-field-label">row variable</label>
+          <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+            Choose the variable that should define the rows of the crosstab.
+          </div>
           <select class="tv-select" id="xtab-row" onchange="TVCROSSTAB.updatePreview()">
             <option value="">choose row…</option>${colOpts}
           </select>
         </div>
         <div class="tv-field">
           <label class="tv-field-label">column variable</label>
+          <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+            Choose the variable that should define the columns of the crosstab.
+          </div>
           <select class="tv-select" id="xtab-col" onchange="TVCROSSTAB.updatePreview()">
             <option value="">choose column…</option>${colOpts}
           </select>
@@ -400,6 +424,9 @@ TV.panels.crosstab = function(pane) {
       </div>
       <div class="tv-field">
         <label class="tv-field-label">engine</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Use <code>data.table</code> for a plain cross-tab object, or <code>tsg</code> for a more presentation-ready summary table.
+        </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="tv-chip selected" id="xtab-engine-dt" onclick="TVCROSSTAB.setEngine('data.table')">data.table</button>
           <button class="tv-chip" id="xtab-engine-tsg" onclick="TVCROSSTAB.setEngine('tsg')">tsg</button>
@@ -407,11 +434,17 @@ TV.panels.crosstab = function(pane) {
       </div>
       <div class="tv-field" id="xtab-weight-field">
         <label class="tv-field-label">weight expression (optional)</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Leave this empty for ordinary counts, or use a numeric expression when rows should contribute weights instead.
+        </div>
         <textarea class="tv-input" id="xtab-weight" placeholder="leave empty for simple counts" style="font-family:var(--tv-type-mono);min-height:72px;resize:vertical" oninput="TVCROSSTAB.updatePreview()"></textarea>
         ${builder}
       </div>
       <div class="tv-field" id="xtab-dt-options">
         <label class="tv-field-label">normalize</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Keep raw counts, or convert them to row, column, or overall percentages depending on the comparison you need.
+        </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="tv-chip selected" id="xtab-norm-none" onclick="TVCROSSTAB.setNormalize('none')">counts</button>
           <button class="tv-chip" id="xtab-norm-row" onclick="TVCROSSTAB.setNormalize('row')">row %</button>
@@ -571,6 +604,9 @@ TV.panels.fill_na = function(pane) {
     <div class="tv-panel-body">
       <div class="tv-field">
         <label class="tv-field-label">columns to fill</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Choose the columns whose missing values should be replaced or carried forward and backward.
+        </div>
         <div id="fillna-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:28px"></div>
         <select class="tv-select" id="fillna-add" onchange="TVFILLNA.addCol(this.value);this.value=''">
           <option value="">add column…</option>${colOpts}
@@ -578,6 +614,9 @@ TV.panels.fill_na = function(pane) {
       </div>
       <div class="tv-field">
         <label class="tv-field-label">method</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Replace missing values with one fixed value, or copy the nearest non-missing value down or up within each column.
+        </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="tv-chip selected" id="fillna-value"  onclick="TVFILLNA.setMethod('value')">replace_na</button>
           <button class="tv-chip"          id="fillna-down"   onclick="TVFILLNA.setMethod('down')">fill down</button>
@@ -586,6 +625,9 @@ TV.panels.fill_na = function(pane) {
       </div>
       <div id="fillna-value-field" class="tv-field">
         <label class="tv-field-label">replacement value</label>
+        <div style="font-size:11px;color:var(--md-on-surface-variant);margin-bottom:8px;line-height:1.5">
+          Enter the value that should replace missing cells when using <code>replace_na</code>.
+        </div>
         <input class="tv-input" id="fillna-val" style="padding:7px 10px;font-size:13px;font-family:var(--tv-type-mono)"
           placeholder="e.g. 0 or Unknown" oninput="TVFILLNA.updatePreview()">
       </div>
@@ -607,7 +649,13 @@ const TVFILLNA = (() => {
   let cols   = [];
   let method = 'value';
 
-  function init() { cols = []; method = 'value'; renderChips(); updatePreview(); }
+  function init() {
+    const context = TV.consumePanelContext ? TV.consumePanelContext() : null;
+    cols = Array.isArray(context?.columns) ? context.columns.slice() : [];
+    method = 'value';
+    renderChips();
+    updatePreview();
+  }
 
   function addCol(col) {
     if (!col || cols.includes(col)) return;
