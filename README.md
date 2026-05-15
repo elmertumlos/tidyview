@@ -37,14 +37,27 @@ Highlights include:
 
 ## Install
 
-Install the latest development or release candidate version from GitHub:
+Install the latest version from GitHub:
+
+```r
+remotes::install_github("elmertumlos/tidyview", upgrade = "never")
+```
+
+The `upgrade = "never"` option tells `remotes` to install `tidyview`
+without interactively asking whether other installed packages should be
+updated first. This makes installation smoother for most users and helps
+avoid unrelated update prompts during setup.
+
+If you want `remotes` to also offer dependency updates, you can still use:
 
 ```r
 remotes::install_github("elmertumlos/tidyview")
 ```
 
 On Windows, GitHub installation may require compatible local build tools
-such as Rtools because the package is installed from source.
+such as Rtools because the package is installed from source. Restarting R
+before installation can also help avoid permission warnings when loaded
+packages are being updated.
 
 If you are distributing a prepared release file directly, users can also
 install from a built tarball:
